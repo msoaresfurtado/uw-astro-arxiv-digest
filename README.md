@@ -2,7 +2,7 @@
 
 Automated weekly digest of astronomy papers on arXiv with UW-Madison affiliated authors.
 
-Every Friday, this tool queries arXiv for all `astro-ph.*` papers from the past week, filters for those with University of Wisconsin-Madison affiliations, and emails you a formatted digest.
+Every Wednesday, this tool queries arXiv for all `astro-ph.*` papers from the past week, filters for those with University of Wisconsin-Madison affiliations, and emails you a formatted digest.
 
 ## Features
 
