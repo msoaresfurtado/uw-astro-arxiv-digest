@@ -1,11 +1,8 @@
 name: Weekly Astro-ph Digest
 
 on:
-  # Run every Friday at 4pm UTC (10am CT / 11am CDT)
   schedule:
     - cron: '0 16 * * 5'
-  
-  # Allow manual triggering for testing
   workflow_dispatch:
     inputs:
       days_back:
@@ -33,6 +30,7 @@ jobs:
       
       - name: Run digest script
         env:
+          ADS_API_KEY: ${{ secrets.ADS_API_KEY }}
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
