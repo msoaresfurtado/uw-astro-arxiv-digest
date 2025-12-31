@@ -38,3 +38,4 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           DAYS_BACK: ${{ github.event.inputs.days_back || '7' }}
         run: python arxiv_digest.py
+        
