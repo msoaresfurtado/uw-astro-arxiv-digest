@@ -1,11 +1,8 @@
 name: Weekly Astro-ph Digest
 
 on:
-  # Run every Friday at 4pm UTC (10am CT / 11am CDT)
   schedule:
     - cron: '0 16 * * 5'
-  
-  # Allow manual triggering for testing
   workflow_dispatch:
     inputs:
       days_back:
@@ -41,4 +38,3 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           DAYS_BACK: ${{ github.event.inputs.days_back || '7' }}
         run: python arxiv_digest.py
-
