@@ -22,9 +22,6 @@ ADS_API_URL = "https://api.adsabs.harvard.edu/v1/search/query"
 # Priority ORCIDs - papers by these authors appear at the top
 PRIORITY_ORCIDS = [
     "0000-0001-7493-7419",  # Melinda Soares-Furtado
-    "0000-0001-7246-5438",  # Andrew
-    "0000-0003-2558-3102",  # Enrico
-    "0000-0003-0381-1039",  # Ricardo Yarza
 ]
 
 # Topic keywords to search for (also used for relevance scoring)
