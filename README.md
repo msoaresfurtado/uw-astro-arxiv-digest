@@ -1,16 +1,31 @@
-# UW-Madison Astro-ph arXiv Digest
+# Astro-ph arXiv Digests
 
-Automated weekly digest of astronomy papers on arXiv with UW-Madison affiliated authors.
+Automated email digests of astronomy papers from arXiv/NASA ADS. This repo contains two independent digests:
 
-Every Friday, this tool queries NASA ADS for all astro-ph papers from the past week that have University of Wisconsin-Madison affiliations, and emails you a formatted digest.
+1. **Weekly UW-Madison Digest** - All astro-ph papers with UW-Madison affiliated authors (Fridays)
+2. **Daily Topic Digest** - Papers matching your research interests, with relevance scoring (Daily)
+
+Both run automatically via GitHub Actions (free!) and share the same secrets.
 
 ## Features
 
-- Uses NASA ADS for reliable affiliation search
-- Nicely formatted HTML email with paper titles, authors, abstracts, and links
+### Weekly UW-Madison Digest (`arxiv_digest.py`)
+- Searches NASA ADS for UW-Madison affiliated authors
 - Grouped by arXiv category
-- Runs automatically via GitHub Actions (free!)
-- Manual trigger option for testing
+- HTML formatted email with abstracts and links
+
+### Daily Topic Digest (`topic_digest.py`)
+- Searches all astro-ph.EP and astro-ph.SR papers plus keyword matches
+- **Relevance scoring** with color-coded badges:
+  - 🔴 **VERY RELEVANT** - Priority authors or multiple keyword matches
+  - 🟠 **RELEVANT** - High-value keyword matches
+  - 🟡 **SOMEWHAT RELEVANT** - Other keyword matches
+  - ⚪ **GENERAL** - Category match only
+- **Priority authors** - Papers by specified ORCIDs appear first
+- **Full abstracts** (not truncated)
+- **Silly welcome messages** - Rotating astronomy/gym encouragement
+- **Hidden treasure** - Fun reward at the bottom for reading the whole email
+- Subject line shows `3🔴 5🟠 12🟡 (47 total)` for quick inbox triage
 
 ## Setup Instructions
 
@@ -67,45 +82,79 @@ In your GitHub repository:
 
 ### 6. Test It
 
-1. Go to **Actions** > **Weekly Astro-ph Digest**
-2. Click **Run workflow**
-3. Optionally change "days_back" (e.g., use 30 to test with more papers)
-4. Click the green **Run workflow** button
-5. Check your email!
+1. Go to **Actions**
+2. Select either **Weekly Astro-ph Digest** or **Daily Topic Digest**
+3. Click **Run workflow**
+4. Optionally change "days_back" (e.g., use 7 to test with more papers)
+5. Click the green **Run workflow** button
+6. Check your email!
 
 ## Configuration
 
-### Changing the Schedule
+### Changing the Schedules
 
-Edit `.github/workflows/weekly_digest.yml` and modify the cron expression:
+Edit the workflow files in `.github/workflows/`:
 
+**Weekly UW Digest** (`weekly_digest.yml`):
 ```yaml
 schedule:
-  - cron: '0 16 * * 5'  # Current: Fridays at 4pm UTC (10am CT)
+  - cron: '0 16 * * 5'  # Fridays at 4pm UTC (10am CT)
+```
+
+**Daily Topic Digest** (`topic_digest.yml`):
+```yaml
+schedule:
+  - cron: '0 16 * * *'  # Daily at 4pm UTC (10am CT)
 ```
 
 Cron format: `minute hour day-of-month month day-of-week`
 
-Examples:
-- `'0 14 * * 5'` - Fridays at 2pm UTC
-- `'0 16 * * 1'` - Mondays at 4pm UTC
-- `'0 16 * * 1,5'` - Mondays and Fridays at 4pm UTC
+### Customizing the Topic Digest
 
-### Modifying the Affiliation Search
+Edit `topic_digest.py` to customize:
 
-Edit `arxiv_digest.py` and change the query in the `query_ads` function:
+**Priority ORCIDs** - Papers by these authors appear first with a star badge:
+```python
+PRIORITY_ORCIDS = [
+    "0000-0001-7493-7419",  # Your ORCID
+    "0000-0001-7246-5438",  # Collaborator
+    # Add more...
+]
+```
+
+**Topic Keywords** - Used for searching and relevance scoring:
+```python
+TOPIC_KEYWORDS = [
+    "gyrochronology",
+    "stellar rotation",
+    "exoplanet age",
+    # Add your research interests...
+]
+```
+
+**High-Value Keywords** - Extra relevance points for these:
+```python
+HIGH_VALUE_KEYWORDS = [
+    "gyrochronology",
+    "planetary engulfment",
+    # Your most important topics...
+]
+```
+
+### Modifying the UW Affiliation Search
+
+Edit `arxiv_digest.py` and change the query:
 
 ```python
 query = f'aff:"Department of Astronomy" aff:"Wisconsin" entdate:{date_range}'
 ```
 
-This searches for papers where authors have both "Department of Astronomy" and "Wisconsin" in their affiliation. You can adjust these terms or add additional constraints using [ADS search syntax](https://ui.adsabs.harvard.edu/help/search/search-syntax).
-
-To include the Physics department as well, you could use:
-
+To include Physics:
 ```python
 query = f'(aff:"Department of Astronomy" OR aff:"Department of Physics") aff:"Wisconsin" entdate:{date_range}'
 ```
+
+See [ADS search syntax](https://ui.adsabs.harvard.edu/help/search/search-syntax) for more options.
 
 ### Using a Different Email Provider
 
@@ -130,30 +179,32 @@ export SENDER_PASSWORD="your-app-password"
 export RECIPIENT_EMAIL="recipient@email.com"
 export SMTP_SERVER="smtp.gmail.com"
 export SMTP_PORT="587"
+export DAYS_BACK="7"  # Optional, defaults to 7 for weekly, 1 for daily
 
-# Run
-python arxiv_digest.py
+# Run either digest
+python arxiv_digest.py      # UW-Madison digest
+python topic_digest.py      # Topic digest
 ```
 
-Or run without email (just prints to console):
+Or run without email (prints to console):
 
 ```bash
 export ADS_API_KEY="your-ads-api-key"
-python arxiv_digest.py
+python topic_digest.py
 ```
 
-## Example Output
+## File Structure
 
-The email includes:
-
-- Paper count summary
-- Papers grouped by category (astro-ph.SR, astro-ph.EP, etc.)
-- For each paper:
-  - Title (linked to arXiv)
-  - Authors
-  - Category
-  - Abstract snippet
+```
+├── .github/workflows/
+│   ├── weekly_digest.yml    # UW-Madison digest schedule
+│   └── topic_digest.yml     # Topic digest schedule
+├── arxiv_digest.py          # UW-Madison digest script
+├── topic_digest.py          # Topic digest script
+├── requirements.txt         # Python dependencies
+└── README.md
+```
 
 ## License
 
-MIT License - feel free to adapt for your own institution!
+MIT License - feel free to adapt for your own institution or interests!
