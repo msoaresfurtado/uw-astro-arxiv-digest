@@ -1,14 +1,14 @@
-name: Weekly Topic Digest
+name: Daily Topic Digest
 
 on:
   schedule:
-    - cron: '0 16 * * 5'  # Fridays at 4pm UTC (10am CT)
+    - cron: '0 16 * * *'  # Daily at 4pm UTC (10am CT)
   workflow_dispatch:
     inputs:
       days_back:
         description: 'Number of days to look back'
         required: false
-        default: '7'
+        default: '1'
 
 jobs:
   send-digest:
@@ -36,5 +36,5 @@ jobs:
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          DAYS_BACK: ${{ github.event.inputs.days_back || '7' }}
+          DAYS_BACK: ${{ github.event.inputs.days_back || '1' }}
         run: python topic_digest.py
