@@ -111,12 +111,15 @@ def build_query(days_back: int = 7) -> str:
     # Build keyword clauses
     keyword_clauses = " OR ".join([f'abs:"{kw}"' for kw in TOPIC_KEYWORDS])
     
-    # Query: (astro-ph.EP OR astro-ph.SR OR keyword matches) AND recent
+    EXCLUDE_CATEGORIES = ["hep-ph", "hep-th", "hep-lat", "gr-qc", "quant-ph"]
+    
+    exclusions = " AND ".join([f'-arxiv_class:"{cat}"' for cat in EXCLUDE_CATEGORIES])
     query = (
         f'(arxiv_class:"astro-ph.EP" OR arxiv_class:"astro-ph.SR" OR {keyword_clauses}) '
-        f'AND entdate:{date_range}'
+        f'AND entdate:{date_range} '
+        f'AND ({exclusions})'
     )
-    
+
     return query
 
 
