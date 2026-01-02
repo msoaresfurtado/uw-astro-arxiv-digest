@@ -81,6 +81,11 @@ WELCOME_MESSAGES = [
 
 # Bottom treasures (rewards for reading to the end)
 BOTTOM_TREASURES = [
+    "🍺 Wisconsin has more bars than grocery stores. And yet you're at the gym. Reading about stars. At 6am. Are you okay?"),
+    ("🗓️ CALENDAR INVITE", "Event: Read arXiv digest on stepmill. When: Tomorrow. And the next day. Recurring: Forever. Attendees: Just you. Location: The void (the gym). RSVP: You already did."),
+    ("🪐 COSMIC PERSPECTIVE", "In 5 billion years, the Sun will expand and engulf the Earth. None of these papers will matter. But you read them anyway. That's either beautiful or stupid. Probably both."),
+    ("🏁 FINISH LINE", "You crossed it. There's no medal. There's no ceremony. There's just the quiet satisfaction of knowing you read an entire digest while climbing to nowhere."),
+    ("🗺️ YOU ARE HERE", "Congratulations. You've reached the bottom of an email, the peak of a fake mountain, and probably the limit of your quads' patience. Plant your flag. You earned it."),
     ("🎉 YOU MADE IT!", "Congratulations! You scrolled through the whole digest. Your dedication to the literature is matched only by your cardiovascular endurance. Gold star for you: ⭐"),
     ("🔮 FORTUNE COOKIE", "Your astronomy fortune: 'A paper you cite today will cite you back within 5 years.' Lucky numbers: 42, 3.14, 6.67×10⁻¹¹"),
     ("🦖 PALEO-ASTRONOMY FACT", "65 million years ago, a T-Rex could have looked up and seen different constellations. The Big Dipper didn't exist yet. Anyway, great job finishing this email!"),
@@ -94,7 +99,6 @@ BOTTOM_TREASURES = [
     ("🧪 EXPERIMENT RESULTS", "Hypothesis: You would read this whole email. Method: Sent email. Results: You're reading this. Conclusion: Hypothesis confirmed. P-value: very significant."),
     ("🌈 WHOLESOME MOMENT", "Hey. Genuinely. It's hard to keep up with the literature while doing everything else. The fact that you're trying means a lot. You're doing great. 💜"),
     ("🎰 SLOT MACHINE", "🍒🍒🍒 JACKPOT! You won: the knowledge from all these abstracts, leg strength, and this nice message. Cash out anytime (close email)."),
-    ("📜 ANCIENT WISDOM", "Confucius say: Scholar who reads on stepmill achieves enlightenment AND glutes. This is definitely a real quote."),
     ("📧 META MOMENT: You're reading a silly message at the bottom of an automated email you built yourself. You engineered your own dopamine hit. That's either genius or a cry for help. Probably both."),
     ("🛸 ALIEN MESSAGE", "GREETINGS HUMAN. WE HAVE OBSERVED YOUR DEDICATION TO BOTH PHYSICAL AND INTELLECTUAL PURSUITS. YOU WILL BE SPARED DURING THE INVASION. jk great job reading!"),
 ]
