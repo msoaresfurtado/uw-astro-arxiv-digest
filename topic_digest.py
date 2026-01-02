@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Weekly Topic-Based Astro-ph Digest
+Daily Topic-Based Astro-ph Digest
 
 Queries NASA ADS for astronomy papers matching research interests,
 with priority sorting for specific authors by ORCID.
@@ -363,22 +363,22 @@ def create_email_content(papers: list, days_back: int) -> tuple:
     treasure_title, treasure_content = random.choice(BOTTOM_TREASURES)
     
     if not papers:
-        subject = f"Astro-ph Topic Digest: No papers this week"
+        subject = f"Astro-ph Topic Digest: No papers today"
         html = f"""
         <html>
         <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
             <h1 style="color: #0479a8; border-bottom: 2px solid #0479a8; padding-bottom: 10px;">
-                Weekly Astro-ph Topic Digest
+                Daily Astro-ph Topic Digest
             </h1>
             <div style="background-color: #f0f8ff; padding: 15px; border-radius: 10px; margin-bottom: 20px; font-size: 16px;">
                 {welcome}
             </div>
             <p style="color: #666;">Papers from {date_range}</p>
-            <p>No papers matching your interests were found this week. Rest day for your brain! 🧘</p>
+            <p>No papers matching your interests were found today. Rest day for your brain! 🧘</p>
         </body>
         </html>
         """
-        text = f"Weekly Astro-ph Topic Digest\n{date_range}\n\n{welcome}\n\nNo papers found this week."
+        text = f"Daily Astro-ph Topic Digest\n{date_range}\n\n{welcome}\n\nNo papers found today."
         return subject, html, text
     
     subject = f"Astro-ph Digest: {tier_counts['🔴']}🔴 {tier_counts['🟠']}🟠 {tier_counts['🟡']}🟡 ({len(papers)} total)"
@@ -392,7 +392,7 @@ def create_email_content(papers: list, days_back: int) -> tuple:
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
         <h1 style="color: #0479a8; border-bottom: 2px solid #0479a8; padding-bottom: 10px;">
-            Weekly Astro-ph Topic Digest
+            Daily Astro-ph Topic Digest
         </h1>
         
         <div style="background-color: #f0f8ff; padding: 15px; border-radius: 10px; margin-bottom: 20px; font-size: 16px; line-height: 1.5;">
@@ -403,7 +403,7 @@ def create_email_content(papers: list, days_back: int) -> tuple:
         
         <div style="background-color: #f5f5f5; padding: 15px; border-radius: 10px; margin-bottom: 25px;">
             <p style="margin: 0; font-size: 18px;">
-                <strong>{len(papers)} papers</strong> this week:
+                <strong>{len(papers)} papers</strong> today:
                 <span style="margin-left: 15px;">🔴 {tier_counts['🔴']} must-read</span>
                 <span style="margin-left: 10px;">🟠 {tier_counts['🟠']} relevant</span>
                 <span style="margin-left: 10px;">🟡 {tier_counts['🟡']} interesting</span>
@@ -433,12 +433,12 @@ def create_email_content(papers: list, days_back: int) -> tuple:
     for paper in sorted_papers:
         text_papers += format_paper_text(paper)
     
-    text = f"""Weekly Astro-ph Topic Digest
+    text = f"""Daily Astro-ph Topic Digest
 {date_range}
 
 {welcome}
 
-{len(papers)} papers this week:
+{len(papers)} papers today:
   🔴 {tier_counts['🔴']} must-read
   🟠 {tier_counts['🟠']} relevant  
   🟡 {tier_counts['🟡']} interesting
@@ -489,7 +489,7 @@ def main():
     if not api_key:
         raise ValueError("ADS_API_KEY environment variable is required")
     
-    days_back = int(os.environ.get("DAYS_BACK", "7"))
+    days_back = int(os.environ.get("DAYS_BACK", "1"))
     
     print(f"Querying ADS for topic-relevant papers from the last {days_back} days...")
     print(f"Priority ORCIDs: {PRIORITY_ORCIDS}")
