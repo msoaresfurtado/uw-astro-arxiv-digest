@@ -10,10 +10,10 @@ import requests
 import smtplib
 import ssl
 import os
+import random
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
-from collections import defaultdict
 
 
 # ADS API configuration
@@ -27,7 +27,7 @@ PRIORITY_ORCIDS = [
     "0000-0003-0381-1039",  # Ricardo Yarza
 ]
 
-# Topic keywords to search for
+# Topic keywords to search for (also used for relevance scoring)
 TOPIC_KEYWORDS = [
     "gyrochronology",
     "stellar rotation",
@@ -40,6 +40,53 @@ TOPIC_KEYWORDS = [
     "starspot",
     "chromospheric activity",
     "lithium depletion",
+]
+
+# High-value keywords (extra relevance points)
+HIGH_VALUE_KEYWORDS = [
+    "gyrochronology",
+    "planetary engulfment",
+    "lithium depletion",
+    "stellar age",
+    "young planet",
+]
+
+# Silly encouraging welcome messages
+WELCOME_MESSAGES = [
+    "🏃‍♀️ Step by step, paper by paper. You're literally ascending while reading about the cosmos. Iconic.",
+    "⭐ The stars aligned for your workout AND your inbox. Let's get this bread (and this literature review).",
+    "🚀 Cardio + astro-ph = the only acceptable form of multitasking. You're doing amazing, sweetie.",
+    "🌟 Fun fact: reading papers on a stepmill burns mass, just like a star. You're basically a main sequence queen.",
+    "💪 Other people scroll Instagram at the gym. You read about stellar rotation. We are not the same.",
+    "🔭 Your heart rate is up, your knowledge is expanding. The universe is proud of you.",
+    "✨ Every step you take is one step closer to tenure and one step up the stepmill. Synergy!",
+    "🌙 The Moon's escape velocity is 2.38 km/s. Yours is higher because nothing can stop you.",
+    "⚡ You're generating more power than a brown dwarf right now. Keep climbing!",
+    "🎯 Peer review your form, cite your sources, crush this workout. In that order.",
+    "🌠 Somewhere, a grad student is sleeping. But not you. You're ASCENDING.",
+    "💫 Hot take: the stepmill is just a really boring rocket. You're training for space.",
+    "🏔️ Sir Edmund Hillary climbed Everest. You're climbing the literature. Both are valid.",
+    "🔥 Your VO2 max called. It said 'thank you for the gains and the gyrochronology.'",
+    "🎢 This is the only acceptable way to read about rotational evolution: while rotating (your legs).",
+]
+
+# Bottom treasures (rewards for reading to the end)
+BOTTOM_TREASURES = [
+    ("🎉 YOU MADE IT!", "Congratulations! You scrolled through the whole digest. Your dedication to the literature is matched only by your cardiovascular endurance. Gold star for you: ⭐"),
+    ("🔮 FORTUNE COOKIE", "Your astronomy fortune: 'A paper you cite today will cite you back within 5 years.' Lucky numbers: 42, 3.14, 6.67×10⁻¹¹"),
+    ("🦖 PALEO-ASTRONOMY FACT", "65 million years ago, a T-Rex could have looked up and seen different constellations. The Big Dipper didn't exist yet. Anyway, great job finishing this email!"),
+    ("🎵 STUCK IN YOUR HEAD", "🎵 We didn't start the fire / It was always burning since the stellar core was churning 🎵 You're welcome. And congrats on finishing!"),
+    ("🏆 ACHIEVEMENT UNLOCKED", "'+1 Literature Awareness' - You have gained 50 XP in the skill 'Keeping Up With The Field.' Only 9,950 more XP until you feel caught up!"),
+    ("🌶️ HOT TAKE ZONE", "Controversial opinion: log(g) should be called 'surface gravity vibe check.' Thank you for coming to my TED talk at the bottom of this email."),
+    ("🎲 D&D STATS UPDATE", "Your literature review stats this week: STR +1 (from stepmill), INT +3 (from papers), WIS +2 (knowing to combine them). Roll for initiative on your next paper."),
+    ("🐛 BUG REPORT", "ERROR 418: You have reached the bottom of the email. This is not a bug, it's a feature. Status: Proud of you."),
+    ("📊 FAKE STATISTICS", "Studies show that 94% of astronomers who read digests on stepmills publish 3x more papers. (Source: I made it up. But you DID finish this email.)"),
+    ("🎬 MOVIE PITCH", "STEPMILL ASTRONOMER: One woman. One machine. 47 abstracts. Coming this summer. Starring you. You're the hero of this story."),
+    ("🧪 EXPERIMENT RESULTS", "Hypothesis: You would read this whole email. Method: Sent email. Results: You're reading this. Conclusion: Hypothesis confirmed. P-value: very significant."),
+    ("🌈 WHOLESOME MOMENT", "Hey. Genuinely. It's hard to keep up with the literature while doing everything else. The fact that you're trying means a lot. You're doing great. 💜"),
+    ("🎰 SLOT MACHINE", "🍒🍒🍒 JACKPOT! You won: the knowledge from all these abstracts, leg strength, and this nice message. Cash out anytime (close email)."),
+    ("📜 ANCIENT WISDOM", "Confucius say: Scholar who reads on stepmill achieves enlightenment AND glutes. This is definitely a real quote."),
+    ("🛸 ALIEN MESSAGE", "GREETINGS HUMAN. WE HAVE OBSERVED YOUR DEDICATION TO BOTH PHYSICAL AND INTELLECTUAL PURSUITS. YOU WILL BE SPARED DURING THE INVASION. jk great job reading!"),
 ]
 
 
@@ -148,21 +195,62 @@ def get_priority_authors(paper: dict) -> list:
     return priority_authors
 
 
+def calculate_relevance_score(paper: dict) -> int:
+    """
+    Calculate a relevance score for the paper.
+    Higher = more relevant to your interests.
+    """
+    score = 0
+    
+    title = paper.get("title", [""])[0].lower()
+    abstract = paper.get("abstract", "").lower()
+    text = title + " " + abstract
+    
+    # Priority author: big bonus
+    if has_priority_author(paper):
+        score += 50
+    
+    # High-value keyword matches (in title = extra points)
+    for kw in HIGH_VALUE_KEYWORDS:
+        if kw.lower() in title:
+            score += 15
+        elif kw.lower() in abstract:
+            score += 8
+    
+    # Regular keyword matches
+    for kw in TOPIC_KEYWORDS:
+        if kw.lower() not in [k.lower() for k in HIGH_VALUE_KEYWORDS]:
+            if kw.lower() in title:
+                score += 5
+            elif kw.lower() in abstract:
+                score += 2
+    
+    return score
+
+
+def get_relevance_tier(score: int) -> tuple:
+    """
+    Get relevance tier based on score.
+    Returns (emoji, color, label, bg_color)
+    """
+    if score >= 50:
+        return ("🔴", "#c5050c", "VERY RELEVANT", "#fff0f0")
+    elif score >= 20:
+        return ("🟠", "#e67e00", "RELEVANT", "#fff8f0")
+    elif score >= 8:
+        return ("🟡", "#d4a017", "SOMEWHAT RELEVANT", "#fffef0")
+    else:
+        return ("⚪", "#888888", "GENERAL", "#f9f9f9")
+
+
 def sort_papers(papers: list) -> list:
-    """Sort papers with priority authors first, then by date."""
-    priority_papers = []
-    other_papers = []
-    
-    for paper in papers:
-        if has_priority_author(paper):
-            priority_papers.append(paper)
-        else:
-            other_papers.append(paper)
-    
-    return priority_papers + other_papers
+    """Sort papers by relevance score (highest first)."""
+    scored = [(p, calculate_relevance_score(p)) for p in papers]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [p for p, s in scored]
 
 
-def format_paper_html(paper: dict, is_priority: bool = False) -> str:
+def format_paper_html(paper: dict) -> str:
     """Format a single paper as HTML with full abstract."""
     
     title = paper.get("title", ["Untitled"])[0]
@@ -172,28 +260,32 @@ def format_paper_html(paper: dict, is_priority: bool = False) -> str:
     category = get_arxiv_category(paper)
     priority_authors = get_priority_authors(paper)
     
+    score = calculate_relevance_score(paper)
+    emoji, color, label, bg_color = get_relevance_tier(score)
+    
     # Format authors
     if len(authors) > 15:
         author_str = ", ".join(authors[:15]) + f" et al. ({len(authors)} authors)"
     else:
         author_str = ", ".join(authors)
     
-    # Priority styling
-    if is_priority:
-        border_color = "#c5050c"  # UW red for priority
-        bg_color = "#fff5f5"
+    # Priority author badge
+    priority_badge = ""
+    if priority_authors:
         priority_badge = f"""
             <p style="margin: 0 0 8px 0; color: #c5050c; font-weight: bold; font-size: 14px;">
-                ⭐ Priority Author: {", ".join(priority_authors)}
+                ⭐ {", ".join(priority_authors)}
             </p>
         """
-    else:
-        border_color = "#0479a8"  # Blue for regular
-        bg_color = "#f9f9f9"
-        priority_badge = ""
     
     return f"""
-    <div style="margin-bottom: 25px; padding: 15px; border-left: 4px solid {border_color}; background-color: {bg_color};">
+    <div style="margin-bottom: 25px; padding: 15px; border-left: 6px solid {color}; background-color: {bg_color};">
+        <div style="margin-bottom: 10px;">
+            <span style="font-size: 24px; margin-right: 10px;">{emoji}</span>
+            <span style="background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">
+                {label}
+            </span>
+        </div>
         <h3 style="margin: 0 0 10px 0;">
             <a href="{url}" style="color: #0479a8; text-decoration: none;">{title}</a>
         </h3>
@@ -211,7 +303,7 @@ def format_paper_html(paper: dict, is_priority: bool = False) -> str:
     """
 
 
-def format_paper_text(paper: dict, is_priority: bool = False) -> str:
+def format_paper_text(paper: dict) -> str:
     """Format a single paper as plain text with full abstract."""
     
     title = paper.get("title", ["Untitled"])[0]
@@ -221,6 +313,9 @@ def format_paper_text(paper: dict, is_priority: bool = False) -> str:
     category = get_arxiv_category(paper)
     priority_authors = get_priority_authors(paper)
     
+    score = calculate_relevance_score(paper)
+    emoji, _, label, _ = get_relevance_tier(score)
+    
     # Format authors
     if len(authors) > 15:
         author_str = ", ".join(authors[:15]) + f" et al. ({len(authors)} authors)"
@@ -228,10 +323,11 @@ def format_paper_text(paper: dict, is_priority: bool = False) -> str:
         author_str = ", ".join(authors)
     
     priority_line = ""
-    if is_priority:
+    if priority_authors:
         priority_line = f"⭐ PRIORITY AUTHOR: {', '.join(priority_authors)}\n"
     
     return f"""
+{emoji} [{label}]
 {title}
 {'-' * min(len(title), 80)}
 {priority_line}Authors: {author_str}
@@ -250,11 +346,21 @@ def create_email_content(papers: list, days_back: int) -> tuple:
     start_date = end_date - timedelta(days=days_back)
     date_range = f"{start_date.strftime('%B %d')} - {end_date.strftime('%B %d, %Y')}"
     
-    # Sort papers (priority authors first)
+    # Sort papers by relevance
     sorted_papers = sort_papers(papers)
     
-    # Count priority vs regular
-    priority_count = sum(1 for p in papers if has_priority_author(p))
+    # Count by tier
+    tier_counts = {"🔴": 0, "🟠": 0, "🟡": 0, "⚪": 0}
+    for paper in papers:
+        score = calculate_relevance_score(paper)
+        emoji, _, _, _ = get_relevance_tier(score)
+        tier_counts[emoji] += 1
+    
+    # Random welcome message
+    welcome = random.choice(WELCOME_MESSAGES)
+    
+    # Random bottom treasure
+    treasure_title, treasure_content = random.choice(BOTTOM_TREASURES)
     
     if not papers:
         subject = f"Astro-ph Topic Digest: No papers this week"
@@ -264,46 +370,23 @@ def create_email_content(papers: list, days_back: int) -> tuple:
             <h1 style="color: #0479a8; border-bottom: 2px solid #0479a8; padding-bottom: 10px;">
                 Weekly Astro-ph Topic Digest
             </h1>
+            <div style="background-color: #f0f8ff; padding: 15px; border-radius: 10px; margin-bottom: 20px; font-size: 16px;">
+                {welcome}
+            </div>
             <p style="color: #666;">Papers from {date_range}</p>
-            <p>No papers matching your interests were found this week.</p>
+            <p>No papers matching your interests were found this week. Rest day for your brain! 🧘</p>
         </body>
         </html>
         """
-        text = f"Weekly Astro-ph Topic Digest\n{date_range}\n\nNo papers found this week."
+        text = f"Weekly Astro-ph Topic Digest\n{date_range}\n\n{welcome}\n\nNo papers found this week."
         return subject, html, text
     
-    subject = f"Astro-ph Topic Digest: {len(papers)} papers ({priority_count} priority)"
+    subject = f"Astro-ph Digest: {tier_counts['🔴']}🔴 {tier_counts['🟠']}🟠 {tier_counts['🟡']}🟡 ({len(papers)} total)"
     
     # Build HTML content
-    html_priority = ""
-    html_other = ""
-    
+    html_papers = ""
     for paper in sorted_papers:
-        is_priority = has_priority_author(paper)
-        if is_priority:
-            html_priority += format_paper_html(paper, is_priority=True)
-        else:
-            html_other += format_paper_html(paper, is_priority=False)
-    
-    # Sections
-    priority_section = ""
-    if priority_count > 0:
-        priority_section = f"""
-        <h2 style="color: #c5050c; margin-top: 30px; border-bottom: 1px solid #c5050c; padding-bottom: 5px;">
-            ⭐ Priority Authors ({priority_count})
-        </h2>
-        {html_priority}
-        """
-    
-    other_section = ""
-    other_count = len(papers) - priority_count
-    if other_count > 0:
-        other_section = f"""
-        <h2 style="color: #333; margin-top: 30px; border-bottom: 1px solid #ddd; padding-bottom: 5px;">
-            Other Papers ({other_count})
-        </h2>
-        {html_other}
-        """
+        html_papers += format_paper_html(paper)
     
     html = f"""
     <html>
@@ -311,52 +394,64 @@ def create_email_content(papers: list, days_back: int) -> tuple:
         <h1 style="color: #0479a8; border-bottom: 2px solid #0479a8; padding-bottom: 10px;">
             Weekly Astro-ph Topic Digest
         </h1>
+        
+        <div style="background-color: #f0f8ff; padding: 15px; border-radius: 10px; margin-bottom: 20px; font-size: 16px; line-height: 1.5;">
+            {welcome}
+        </div>
+        
         <p style="color: #666;">Papers from {date_range}</p>
-        <p style="font-size: 16px;">
-            <strong>{len(papers)}</strong> papers matching your interests
-            ({priority_count} from priority authors)
-        </p>
-        <p style="font-size: 14px; color: #666;">
-            <strong>Topics:</strong> astro-ph.EP, astro-ph.SR, gyrochronology, stellar rotation, 
-            exoplanet age, planetary engulfment, young stars, TESS, stellar age, starspots, 
-            chromospheric activity, lithium depletion
-        </p>
-        {priority_section}
-        {other_section}
+        
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 10px; margin-bottom: 25px;">
+            <p style="margin: 0; font-size: 18px;">
+                <strong>{len(papers)} papers</strong> this week:
+                <span style="margin-left: 15px;">🔴 {tier_counts['🔴']} must-read</span>
+                <span style="margin-left: 10px;">🟠 {tier_counts['🟠']} relevant</span>
+                <span style="margin-left: 10px;">🟡 {tier_counts['🟡']} interesting</span>
+                <span style="margin-left: 10px;">⚪ {tier_counts['⚪']} general</span>
+            </p>
+        </div>
+        
+        {html_papers}
+        
+        <div style="margin-top: 50px; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; color: white; text-align: center;">
+            <h2 style="margin: 0 0 10px 0;">{treasure_title}</h2>
+            <p style="margin: 0; font-size: 14px; line-height: 1.6;">
+                {treasure_content}
+            </p>
+        </div>
+        
         <hr style="margin-top: 40px; border: none; border-top: 1px solid #ddd;">
         <p style="color: #999; font-size: 12px;">
-            This digest is automatically generated using NASA ADS.
+            This digest is automatically generated using NASA ADS. Keep climbing! 🏔️
         </p>
     </body>
     </html>
     """
     
     # Build plain text content
-    text_priority = ""
-    text_other = ""
-    
+    text_papers = ""
     for paper in sorted_papers:
-        is_priority = has_priority_author(paper)
-        if is_priority:
-            text_priority += format_paper_text(paper, is_priority=True)
-        else:
-            text_other += format_paper_text(paper, is_priority=False)
+        text_papers += format_paper_text(paper)
     
     text = f"""Weekly Astro-ph Topic Digest
 {date_range}
 
-{len(papers)} papers matching your interests ({priority_count} from priority authors)
+{welcome}
 
-Topics: astro-ph.EP, astro-ph.SR, gyrochronology, stellar rotation, exoplanet age, 
-planetary engulfment, young stars, TESS, stellar age, starspots, chromospheric activity, 
-lithium depletion
+{len(papers)} papers this week:
+  🔴 {tier_counts['🔴']} must-read
+  🟠 {tier_counts['🟠']} relevant  
+  🟡 {tier_counts['🟡']} interesting
+  ⚪ {tier_counts['⚪']} general
+
+{'=' * 60}
+{text_papers}
+
+{'=' * 60}
+{treasure_title}
+{'=' * 60}
+{treasure_content}
 """
-    
-    if priority_count > 0:
-        text += f"\n{'=' * 60}\nPRIORITY AUTHORS ({priority_count})\n{'=' * 60}\n{text_priority}"
-    
-    if other_count > 0:
-        text += f"\n{'=' * 60}\nOTHER PAPERS ({other_count})\n{'=' * 60}\n{text_other}"
     
     return subject, html, text
 
@@ -402,9 +497,17 @@ def main():
     papers = query_ads(api_key, days_back=days_back)
     print(f"Found {len(papers)} papers")
     
-    priority_count = sum(1 for p in papers if has_priority_author(p))
-    print(f"  - {priority_count} from priority authors")
-    print(f"  - {len(papers) - priority_count} other papers")
+    # Count by tier
+    tier_counts = {"🔴": 0, "🟠": 0, "🟡": 0, "⚪": 0}
+    for paper in papers:
+        score = calculate_relevance_score(paper)
+        emoji, _, _, _ = get_relevance_tier(score)
+        tier_counts[emoji] += 1
+    
+    print(f"  🔴 {tier_counts['🔴']} must-read")
+    print(f"  🟠 {tier_counts['🟠']} relevant")
+    print(f"  🟡 {tier_counts['🟡']} interesting")
+    print(f"  ⚪ {tier_counts['⚪']} general")
     
     subject, html, text = create_email_content(papers, days_back)
     
