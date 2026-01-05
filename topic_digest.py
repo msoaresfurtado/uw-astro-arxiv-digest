@@ -78,7 +78,7 @@ WELCOME_MESSAGES = [
 
 # Bottom treasures (rewards for reading to the end)
 BOTTOM_TREASURES = [
-    "🍺 Wisconsin has more bars than grocery stores. And yet you're at the gym. Reading about stars. At 6am. Are you okay?"),
+    ("🍺 Wisconsin has more bars than grocery stores. And yet you're at the gym. Reading about stars. At 6am. Are you okay?"),
     ("🗓️ CALENDAR INVITE", "Event: Read arXiv digest on stepmill. When: Tomorrow. And the next day. Recurring: Forever. Attendees: Just you. Location: The void (the gym). RSVP: You already did."),
     ("🪐 COSMIC PERSPECTIVE", "In 5 billion years, the Sun will expand and engulf the Earth. None of these papers will matter. But you read them anyway. That's either beautiful or stupid. Probably both."),
     ("🏁 FINISH LINE", "You crossed it. There's no medal. There's no ceremony. There's just the quiet satisfaction of knowing you read an entire digest while climbing to nowhere."),
