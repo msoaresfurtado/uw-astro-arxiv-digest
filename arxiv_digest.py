@@ -10,6 +10,7 @@ import requests
 import smtplib
 import ssl
 import os
+import re
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
@@ -19,10 +20,74 @@ from collections import defaultdict
 # ADS API configuration
 ADS_API_URL = "https://api.adsabs.harvard.edu/v1/search/query"
 
+# Patterns for identifying UW-Madison affiliations
+# These cover common variations in how affiliations are listed
+UW_MADISON_PATTERNS = [
+    r"university of wisconsin[\s\-\u2013\u2014]*madison",
+    r"uw[\s\-\u2013\u2014]*madison",
+    r"u\.?\s*of\s*w\.?[\s\-\u2013\u2014]*madison",
+    r"madison.*wisconsin.*(?:astronomy|physics)",
+    r"wisconsin.*madison",
+]
+
+# Compile patterns for efficiency
+UW_MADISON_REGEX = re.compile("|".join(UW_MADISON_PATTERNS), re.IGNORECASE)
+
+
+def is_uw_madison_affiliation(affiliation: str) -> bool:
+    """
+    Check if an affiliation string indicates UW-Madison.
+    
+    Handles various formats:
+    - University of Wisconsin-Madison
+    - University of Wisconsin - Madison  
+    - UW-Madison
+    - UW Madison
+    - Univ. of Wisconsin, Madison
+    - Department of Astronomy, Madison, WI
+    - etc.
+    """
+    if not affiliation:
+        return False
+    
+    aff_lower = affiliation.lower()
+    
+    # Quick check for obvious non-matches
+    if "wisconsin" not in aff_lower and "uw" not in aff_lower:
+        return False
+    
+    # Check against compiled patterns
+    if UW_MADISON_REGEX.search(affiliation):
+        return True
+    
+    # Additional check: "Wisconsin" + department keywords (but not other UW campuses)
+    if "wisconsin" in aff_lower:
+        # Exclude other UW system campuses
+        other_campuses = ["milwaukee", "green bay", "la crosse", "eau claire", 
+                         "oshkosh", "parkside", "platteville", "river falls",
+                         "stevens point", "stout", "superior", "whitewater"]
+        
+        has_other_campus = any(campus in aff_lower for campus in other_campuses)
+        
+        if not has_other_campus:
+            # Check for astronomy/physics department indicators
+            dept_keywords = ["astronomy", "physics", "astro", "astrophysics"]
+            if any(kw in aff_lower for kw in dept_keywords):
+                return True
+            
+            # Check for Madison specifically
+            if "madison" in aff_lower:
+                return True
+    
+    return False
+
 
 def query_ads(api_key: str, days_back: int = 7, rows: int = 200) -> list:
     """
     Query ADS for recent astro-ph papers with UW-Madison affiliations.
+    
+    Uses a broader query to catch various affiliation formats, then
+    filters results more carefully.
     """
     
     # Calculate date range
@@ -31,10 +96,16 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 200) -> list:
     
     date_range = f"[{start_date.strftime('%Y-%m-%d')} TO {end_date.strftime('%Y-%m-%d')}]"
     
-    # ADS query:
-    # - aff:"Department of Astronomy" aff:"Wisconsin" = UW-Madison Astronomy
-    # - entdate:[] = entry date range (when it appeared in ADS)
-    query = f'aff:"Department of Astronomy" aff:"Wisconsin" entdate:{date_range}'
+    # Broader ADS query to catch various affiliation formats:
+    # - "Wisconsin" AND "Madison" anywhere in affiliation
+    # - OR the institutional identifier
+    # - Limited to astro-ph papers
+    query = (
+        f'(aff:"Wisconsin" aff:"Madison" OR aff:"UW-Madison" OR aff:"UW Madison" '
+        f'OR institution:"Univ Wisconsin Madison") '
+        f'entdate:{date_range} '
+        f'bibstem:(ApJ OR ApJL OR ApJS OR AJ OR MNRAS OR A&A OR PASP OR ARA&A OR arXiv)'
+    )
     
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -52,7 +123,16 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 200) -> list:
     response.raise_for_status()
     
     data = response.json()
-    return data.get("response", {}).get("docs", [])
+    papers = data.get("response", {}).get("docs", [])
+    
+    # Filter to only papers with confirmed UW-Madison affiliations
+    confirmed_papers = []
+    for paper in papers:
+        uw_authors = get_uw_authors(paper)
+        if uw_authors:
+            confirmed_papers.append(paper)
+    
+    return confirmed_papers
 
 
 def get_arxiv_id(paper: dict) -> str:
@@ -83,15 +163,19 @@ def get_arxiv_category(paper: dict) -> str:
 
 
 def get_uw_authors(paper: dict) -> list:
-    """Extract UW-Madison affiliated authors from a paper."""
+    """
+    Extract UW-Madison affiliated authors from a paper.
+    
+    Uses flexible matching to handle various affiliation formats.
+    """
     authors = paper.get("author", [])
     affiliations = paper.get("aff", [])
     
     uw_authors = []
     for i, author in enumerate(authors):
         if i < len(affiliations):
-            aff = affiliations[i].lower()
-            if "wisconsin" in aff and ("astronomy" in aff or "physics" in aff):
+            aff = affiliations[i]
+            if is_uw_madison_affiliation(aff):
                 uw_authors.append(author)
     
     return uw_authors
@@ -182,7 +266,7 @@ def create_email_content(papers: list, days_back: int) -> tuple:
     
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days_back)
-    date_range = f"{start_date.strftime('%B %d')} - {end_date.strftime('%B %d, %Y')}"
+    date_range = f"{start_date.strftime('%B %d')} to {end_date.strftime('%B %d, %Y')}"
     
     if not papers:
         subject = f"UW-Madison Astro-ph Digest: No papers this week"
@@ -292,7 +376,9 @@ def main():
     
     for paper in papers:
         title = paper.get("title", ["Untitled"])[0]
-        print(f"  - {title[:80]}...")
+        uw_authors = get_uw_authors(paper)
+        print(f"  - {title[:70]}...")
+        print(f"    UW authors: {', '.join(uw_authors)}")
     
     subject, html, text = create_email_content(papers, days_back)
     
