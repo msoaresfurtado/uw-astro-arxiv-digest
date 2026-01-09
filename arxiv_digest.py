@@ -1,174 +1,211 @@
 #!/usr/bin/env python3
 """
-UW-Madison Astro-ph arXiv Digest (ADS Version)
+UW–Madison Astronomy astro-ph Digest (ADS Version)
 
-Queries NASA ADS for astronomy papers from the past week with
-UW-Madison affiliated authors.
+What this does:
+- Scrapes UW Astronomy faculty names from the department directory page
+- Queries NASA ADS for *astro-ph arXiv e-prints* in the last N days
+- Filters results to papers authored by one or more UW Astronomy faculty
 
-Key fixes vs prior version:
-- Broader ADS query (no longer requires "Wisconsin" to appear in aff)
-- Uses ADS-side astronomy filter (fq=database:astronomy)
-- UW-Madison affiliation matcher no longer rejects "UW–Madison" just because
-  the word "Wisconsin" is missing
-- More robust author↔aff mapping (handles missing/misaligned aff lists)
+Key fixes vs your old version:
+- Uses ADS `date:` range instead of `entdate:` (prevents "old papers" due to late ingest)
+- Requires doctype:eprint AND arxiv_class:astro-ph* (true arXiv-style astro-ph)
+- Matches by faculty author list (department-specific), not UW-wide affiliation strings
 """
 
-import requests
-import smtplib
-import ssl
 import os
 import re
+import ssl
+import smtplib
+import requests
+from itertools import islice
+from datetime import datetime, timedelta, timezone
+from collections import defaultdict
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
-from collections import defaultdict
-from itertools import zip_longest
+from html import unescape
 
 
-# ADS API configuration
 ADS_API_URL = "https://api.adsabs.harvard.edu/v1/search/query"
-
-# Other UW system campuses to exclude
-OTHER_UW_CAMPUSES = [
-    "milwaukee", "green bay", "la crosse", "eau claire", "oshkosh",
-    "parkside", "platteville", "river falls", "stevens point",
-    "stout", "superior", "whitewater"
-]
-
-# Hints that often indicate "UW" means University of Washington (false positive risk)
-UWASH_HINTS = [
-    "university of washington",
-    "uw seattle",
-    "seattle, wa",
-    "seattle wa",
-    "washington, seattle",
-    "dept. of astronomy, university of washington",
-]
-
-# Patterns for identifying UW-Madison affiliations
-# NOTE: We intentionally allow "UW-Madison" even if "Wisconsin" isn't spelled out.
-UW_MADISON_PATTERNS = [
-    r"\buw[\s\-–—]*madison\b",
-    r"\buniversity of wisconsin[\s,\-–—]*madison\b",
-    r"\buniv\.?\s*(of\s*)?wisconsin[\s,\-–—]*madison\b",
-    r"\bu\.?\s*of\s*w\.?[\s,\-–—]*madison\b",
-    r"\bwisconsin[\s,\-–—]*madison\b",
-    # common institute variants (optional but helps recall)
-    r"\bspace science and engineering center\b.*\bmadison\b",
-    r"\bssec\b.*\bmadison\b",
-]
-
-UW_MADISON_REGEX = re.compile("|".join(UW_MADISON_PATTERNS), re.IGNORECASE)
+FACULTY_URL = "https://www.astro.wisc.edu/people/faculty/filter/faculty/"
 
 
-def is_uw_madison_affiliation(affiliation: str) -> bool:
+# -----------------------------
+# Faculty scraping
+# -----------------------------
+
+NAME_LINE_RE = re.compile(
+    r"^\s*([A-Z][A-Za-z\u00C0-\u017F'\-\. ]+),\s*([A-Z][A-Za-z\u00C0-\u017F'\-\. ]+)\s*$"
+)
+
+def scrape_faculty_names(url: str, debug: bool = False) -> list[str]:
     """
-    Check if an affiliation string indicates UW-Madison.
+    Scrape faculty names from the UW Astronomy directory page.
 
-    Accepts:
-    - UW–Madison / UW Madison
-    - University of Wisconsin–Madison (many punctuation variants)
-    - Univ. of Wisconsin, Madison
-    - etc.
-
-    Excludes:
-    - Other UW system campuses (Milwaukee, etc.)
-    - University of Washington / Seattle contexts
+    The UW site may block some automated requests depending on headers/network.
+    We set a browser-ish User-Agent and accept compression.
+    If scraping fails, you can provide FACULTY_NAMES in env as a fallback.
     """
-    if not affiliation:
-        return False
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
 
-    aff_lower = affiliation.lower()
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+        r.raise_for_status()
+        html = r.text
+    except Exception as e:
+        if debug:
+            print(f"DEBUG: Faculty scrape failed: {e}")
+        return []
 
-    # Exclude University of Washington contexts (common false positives when "UW" appears)
-    if any(h in aff_lower for h in UWASH_HINTS):
-        return False
+    # Crude HTML→text: enough to find "Last, First" lines in the directory
+    text = unescape(html)
+    text = re.sub(r"<script\b[^<]*(?:(?!</script>)<[^<]*)*</script>", " ", text, flags=re.I)
+    text = re.sub(r"<style\b[^<]*(?:(?!</style>)<[^<]*)*</style>", " ", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", "\n", text)
+    text = re.sub(r"\n{2,}", "\n", text)
 
-    # Exclude other UW system campuses (e.g., Milwaukee)
-    if any(campus in aff_lower for campus in OTHER_UW_CAMPUSES):
-        return False
+    names = []
+    for line in text.splitlines():
+        m = NAME_LINE_RE.match(line.strip())
+        if m:
+            last, first = m.group(1).strip(), m.group(2).strip()
+            # avoid obvious non-person lines
+            if len(last) >= 2 and len(first) >= 2:
+                names.append(f"{last}, {first}")
 
-    # Positive match against explicit UW–Madison / U Wisconsin–Madison patterns
-    return bool(UW_MADISON_REGEX.search(affiliation))
+    # Deduplicate while preserving order
+    seen = set()
+    out = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            out.append(n)
+
+    if debug:
+        print(f"DEBUG: Scraped {len(out)} faculty names")
+        print("DEBUG: First 10 names:", out[:10])
+
+    return out
 
 
-def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = False) -> list:
+def get_faculty_names(debug: bool = False) -> list[str]:
     """
-    Query ADS for recent astronomy papers that likely include UW-Madison authors.
-
-    Strategy:
-    1) Use an OR-based aff query to increase recall (doesn't require "Wisconsin")
-    2) Use ADS-side filtering to astronomy database via fq=database:astronomy
-    3) Filter down precisely in Python using is_uw_madison_affiliation()
+    Primary: scrape from FACULTY_URL
+    Fallback: FACULTY_NAMES env var (semicolon-separated "Last, First; Last, First; ...")
     """
+    names = scrape_faculty_names(FACULTY_URL, debug=debug)
+    if names:
+        return names
 
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days_back)
-    date_range = f"[{start_date:%Y-%m-%d} TO {end_date:%Y-%m-%d}]"
+    # Fallback for when the site blocks scraping from your environment
+    env = os.environ.get("FACULTY_NAMES", "").strip()
+    if env:
+        fallback = [x.strip() for x in env.split(";") if x.strip()]
+        if debug:
+            print(f"DEBUG: Using FACULTY_NAMES fallback with {len(fallback)} names")
+        return fallback
 
-    # Broader recall query: many UW-Madison affiliations omit the literal "Wisconsin"
-    # Quoted phrases improve precision; OR improves recall.
-    query = (
-        f'entdate:{date_range} AND ('
-        f'aff:"University of Wisconsin" OR '
-        f'aff:"University of Wisconsin - Madison" OR '
-        f'aff:"University of Wisconsin–Madison" OR '
-        f'aff:"UW-Madison" OR '
-        f'aff:"UW Madison" OR '
-        f'aff:"Univ of Wisconsin"'
-        f')'
+    raise RuntimeError(
+        "Could not scrape faculty names and no FACULTY_NAMES fallback was provided.\n"
+        "Set FACULTY_NAMES like:\n"
+        "  export FACULTY_NAMES='Barger, Amy; Becker, Juliette; ...'\n"
     )
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-    }
 
-    # Use ADS-side astronomy filter; this is more reliable than guessing journals from bibcode.
-    params = {
-        "q": query,
-        "fq": "database:astronomy",
-        "fl": "title,author,aff,abstract,bibcode,identifier,keyword,pubdate,arxiv_class,bibstem,doctype",
-        "rows": rows,
-        "sort": "date desc",
-    }
+# -----------------------------
+# ADS querying
+# -----------------------------
 
-    if debug:
-        print(f"DEBUG: ADS query: {query}")
-        print(f"DEBUG: ADS fq: {params['fq']}")
-
-    response = requests.get(ADS_API_URL, headers=headers, params=params, timeout=30)
-    response.raise_for_status()
-
-    data = response.json()
-    papers = data.get("response", {}).get("docs", [])
-
-    if debug:
-        print(f"DEBUG: Raw ADS results: {len(papers)}")
-        for p in papers[:15]:
-            title = (p.get("title") or ["?"])[0]
-            print(f"\n  Title: {title[:80]}")
-            print(f"  pubdate: {p.get('pubdate')}")
-            print(f"  doctype: {p.get('doctype')}")
-            print(f"  arxiv_class: {p.get('arxiv_class')}")
-            affs = p.get("aff") or []
-            for i, aff in enumerate(affs[:5]):
-                print(f"  aff[{i}]: {(aff or '')[:120]}")
-
-    # Final filter: confirm UW-Madison affiliations in the returned set
-    confirmed_papers = []
-    for paper in papers:
-        uw_authors = get_uw_authors(paper)
-        if uw_authors:
-            confirmed_papers.append(paper)
-
-    if debug:
-        print(f"\nDEBUG: After UW-Madison filter: {len(confirmed_papers)}")
-
-    return confirmed_papers
+def chunked(iterable, n):
+    it = iter(iterable)
+    while True:
+        chunk = list(islice(it, n))
+        if not chunk:
+            break
+        yield chunk
 
 
-def get_arxiv_id(paper: dict) -> str:
-    """Extract arXiv ID from ADS paper record."""
+def iso_utc(dt: datetime) -> str:
+    """Return RFC3339-ish UTC timestamp string used by ADS `date:` field."""
+    dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def query_ads_for_faculty(
+    api_key: str,
+    faculty_names: list[str],
+    days_back: int = 7,
+    rows_per_query: int = 200,
+    author_chunk_size: int = 10,
+    debug: bool = False,
+) -> list[dict]:
+    """
+    Query ADS for astro-ph eprints in a date range authored by UW Astro faculty.
+
+    Critical choices:
+    - date:[start TO end] uses ADS machine-readable pubdate (not entdate). :contentReference[oaicite:1]{index=1}
+    - doctype:eprint + arxiv_class:astro-ph* => arXiv-style astro-ph eprints
+    - Authors are OR'ed, chunked to avoid oversized query strings
+    """
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=days_back)
+
+    # Use end-of-day inclusive window in UTC
+    start_s = iso_utc(start.replace(hour=0, minute=0, second=0, microsecond=0))
+    end_s = iso_utc(end.replace(hour=23, minute=59, second=59, microsecond=0))
+
+    date_clause = f'date:[{start_s} TO {end_s}]'
+    base_clause = 'doctype:eprint AND arxiv_class:"astro-ph*"'
+
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    all_docs = []
+    seen_bibcodes = set()
+
+    for group in chunked(faculty_names, author_chunk_size):
+        # Build author:(... OR ... OR ...) group
+        # Using full "Last, First" improves precision in ADS author matching.
+        author_terms = " OR ".join([f'author:"{name}"' for name in group])
+        q = f"({base_clause}) AND ({date_clause}) AND ({author_terms})"
+
+        params = {
+            "q": q,
+            "fl": "title,author,abstract,bibcode,identifier,keyword,pubdate,date,arxiv_class",
+            "rows": rows_per_query,
+            "sort": "date desc",
+        }
+
+        if debug:
+            print("\nDEBUG: ADS query chunk:")
+            print(q)
+
+        resp = requests.get(ADS_API_URL, headers=headers, params=params, timeout=30)
+        resp.raise_for_status()
+        docs = resp.json().get("response", {}).get("docs", []) or []
+
+        if debug:
+            print(f"DEBUG: Returned {len(docs)} docs for this chunk")
+
+        for d in docs:
+            bib = d.get("bibcode")
+            if bib and bib not in seen_bibcodes:
+                seen_bibcodes.add(bib)
+                all_docs.append(d)
+
+    # Sort final unique list by ADS `date` desc
+    all_docs.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return all_docs
+
+
+def get_arxiv_id(paper: dict) -> str | None:
     identifiers = paper.get("identifier", []) or []
     for ident in identifiers:
         if isinstance(ident, str) and ident.startswith("arXiv:"):
@@ -177,7 +214,6 @@ def get_arxiv_id(paper: dict) -> str:
 
 
 def get_arxiv_url(paper: dict) -> str:
-    """Get arXiv URL for a paper."""
     arxiv_id = get_arxiv_id(paper)
     if arxiv_id:
         return f"https://arxiv.org/abs/{arxiv_id}"
@@ -185,53 +221,58 @@ def get_arxiv_url(paper: dict) -> str:
     return f"https://ui.adsabs.harvard.edu/abs/{bibcode}"
 
 
-def get_arxiv_category(paper: dict) -> str:
-    """Get primary arXiv category (if present)."""
+def get_primary_category(paper: dict) -> str:
     classes = paper.get("arxiv_class", []) or []
-    if classes:
-        return classes[0]
-    return "astronomy"
+    return classes[0] if classes else "astro-ph"
 
 
-def get_uw_authors(paper: dict) -> list:
+def faculty_hits(paper: dict, faculty_names: list[str]) -> list[str]:
     """
-    Extract UW-Madison affiliated authors from a paper.
+    Identify which faculty appear in the ADS author list.
 
-    Robust to:
-    - aff list shorter than author list
-    - missing aff entries
-    - occasional author↔aff misalignment
-
-    If we can’t reliably map author-by-author but see UW–Madison in any affiliation,
-    return a sentinel so the paper is still included.
+    Note: ADS author strings are usually "Last, F." etc.
+    We match on last name + first initial to be robust.
     """
     authors = paper.get("author", []) or []
-    affs = paper.get("aff", []) or []
+    author_join = " | ".join(authors).lower()
 
-    uw_authors = []
-    for author, aff in zip_longest(authors, affs, fillvalue=""):
-        if author and aff and is_uw_madison_affiliation(aff):
-            uw_authors.append(author)
+    hits = []
+    for full in faculty_names:
+        last, first = [x.strip() for x in full.split(",", 1)]
+        key = f"{last}, {first[0]}".lower()
+        if key in author_join:
+            hits.append(full)
 
-    # Fallback: include paper if ANY affiliation looks UW-Madison
-    if not uw_authors:
-        if any(is_uw_madison_affiliation(a) for a in affs if a):
-            return ["(UW–Madison affiliation present; per-author mapping unavailable)"]
+    # If nothing matched by initial, fallback to last-name-only (can create rare false positives)
+    if not hits:
+        for full in faculty_names:
+            last = full.split(",", 1)[0].strip().lower()
+            if re.search(rf"\b{re.escape(last)}\b", author_join):
+                hits.append(full)
 
-    return uw_authors
+    # Dedup
+    seen = set()
+    out = []
+    for h in hits:
+        if h not in seen:
+            seen.add(h)
+            out.append(h)
+    return out
 
 
-def format_paper_html(paper: dict) -> str:
-    """Format a single paper as HTML."""
+# -----------------------------
+# Email formatting (kept close to your original)
+# -----------------------------
+
+def format_paper_html(paper: dict, hits: list[str]) -> str:
     title = (paper.get("title") or ["Untitled"])[0]
     authors = paper.get("author", []) or []
     abstract = paper.get("abstract", "No abstract available.")
     url = get_arxiv_url(paper)
-    category = get_arxiv_category(paper)
-    uw_authors = get_uw_authors(paper)
+    category = get_primary_category(paper)
 
     author_str = ", ".join(authors[:10]) + (f" et al. ({len(authors)} authors)" if len(authors) > 10 else "")
-    uw_str = ", ".join(uw_authors) if uw_authors else "Unknown"
+    hit_str = ", ".join(hits) if hits else "Unknown"
 
     if len(abstract) > 500:
         abstract = abstract[:500] + "..."
@@ -242,7 +283,7 @@ def format_paper_html(paper: dict) -> str:
             <a href="{url}" style="color: #0479a8; text-decoration: none;">{title}</a>
         </h3>
         <p style="margin: 0 0 8px 0; color: #c5050c; font-size: 14px;">
-            <strong>UW-Madison:</strong> {uw_str}
+            <strong>UW Astro faculty:</strong> {hit_str}
         </p>
         <p style="margin: 0 0 8px 0; color: #666; font-size: 14px;">
             <strong>All Authors:</strong> {author_str}
@@ -257,17 +298,15 @@ def format_paper_html(paper: dict) -> str:
     """
 
 
-def format_paper_text(paper: dict) -> str:
-    """Format a single paper as plain text."""
+def format_paper_text(paper: dict, hits: list[str]) -> str:
     title = (paper.get("title") or ["Untitled"])[0]
     authors = paper.get("author", []) or []
     abstract = paper.get("abstract", "No abstract available.")
     url = get_arxiv_url(paper)
-    category = get_arxiv_category(paper)
-    uw_authors = get_uw_authors(paper)
+    category = get_primary_category(paper)
 
     author_str = ", ".join(authors[:10]) + (f" et al. ({len(authors)} authors)" if len(authors) > 10 else "")
-    uw_str = ", ".join(uw_authors) if uw_authors else "Unknown"
+    hit_str = ", ".join(hits) if hits else "Unknown"
 
     if len(abstract) > 500:
         abstract = abstract[:500] + "..."
@@ -275,7 +314,7 @@ def format_paper_text(paper: dict) -> str:
     return f"""
 {title}
 {'-' * min(len(title), 80)}
-UW-Madison: {uw_str}
+UW Astro faculty: {hit_str}
 All Authors: {author_str}
 Category: {category}
 Link: {url}
@@ -285,78 +324,64 @@ Link: {url}
 """
 
 
-def create_email_content(papers: list, days_back: int) -> tuple:
-    """Create HTML and plain text email content."""
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days_back)
-    date_range = f"{start_date.strftime('%B %d')} to {end_date.strftime('%B %d, %Y')}"
+def create_email_content(papers_with_hits: list[tuple[dict, list[str]]], days_back: int) -> tuple[str, str, str]:
+    end = datetime.now()
+    start = end - timedelta(days=days_back)
+    date_range = f"{start.strftime('%B %d')} to {end.strftime('%B %d, %Y')}"
 
-    if not papers:
-        subject = "UW-Madison Astro-ph Digest: No papers this week"
+    if not papers_with_hits:
+        subject = "UW Astronomy astro-ph Digest: No papers this week"
         html = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
-            <h1 style="color: #c5050c; border-bottom: 2px solid #c5050c; padding-bottom: 10px;">
-                UW-Madison Astro-ph Digest
-            </h1>
-            <p style="color: #666;">Papers from {date_range}</p>
-            <p>No papers with UW-Madison affiliated authors were found in ADS (astronomy database) for this window.</p>
-        </body>
-        </html>
+        <html><body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #c5050c; border-bottom: 2px solid #c5050c; padding-bottom: 10px;">UW Astronomy astro-ph Digest</h1>
+          <p style="color: #666;">Papers from {date_range}</p>
+          <p>No astro-ph arXiv e-prints from UW Astronomy faculty were found in this window.</p>
+        </body></html>
         """
-        text = f"UW-Madison Astro-ph Digest\n{date_range}\n\nNo papers found this week."
+        text = f"UW Astronomy astro-ph Digest\n{date_range}\n\nNo papers found this week."
         return subject, html, text
 
-    subject = f"UW-Madison Astro-ph Digest: {len(papers)} paper{'s' if len(papers) != 1 else ''} this week"
+    subject = f"UW Astronomy astro-ph Digest: {len(papers_with_hits)} paper{'s' if len(papers_with_hits) != 1 else ''} this week"
 
     by_category = defaultdict(list)
-    for paper in papers:
-        category = get_arxiv_category(paper)
-        by_category[category].append(paper)
+    for paper, hits in papers_with_hits:
+        by_category[get_primary_category(paper)].append((paper, hits))
 
     html_papers = ""
     for cat in sorted(by_category.keys()):
         cat_papers = by_category[cat]
         html_papers += f'<h2 style="color: #333; margin-top: 30px;">{cat} ({len(cat_papers)})</h2>'
-        for paper in cat_papers:
-            html_papers += format_paper_html(paper)
+        for paper, hits in cat_papers:
+            html_papers += format_paper_html(paper, hits)
 
     html = f"""
-    <html>
-    <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
-        <h1 style="color: #c5050c; border-bottom: 2px solid #c5050c; padding-bottom: 10px;">
-            UW-Madison Astro-ph Digest
-        </h1>
-        <p style="color: #666;">Papers from {date_range}</p>
-        <p style="font-size: 18px;"><strong>{len(papers)}</strong> paper{"s" if len(papers) != 1 else ""} with UW-Madison affiliated authors</p>
-        {html_papers}
-        <hr style="margin-top: 40px; border: none; border-top: 1px solid #ddd;">
-        <p style="color: #999; font-size: 12px;">
-            This digest is automatically generated using NASA ADS (astronomy database filter).
-        </p>
-    </body>
-    </html>
+    <html><body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
+      <h1 style="color: #c5050c; border-bottom: 2px solid #c5050c; padding-bottom: 10px;">UW Astronomy astro-ph Digest</h1>
+      <p style="color: #666;">Papers from {date_range}</p>
+      <p style="font-size: 18px;"><strong>{len(papers_with_hits)}</strong> astro-ph e-print{"s" if len(papers_with_hits) != 1 else ""} with UW Astronomy faculty authors</p>
+      {html_papers}
+      <hr style="margin-top: 40px; border: none; border-top: 1px solid #ddd;">
+      <p style="color: #999; font-size: 12px;">Automatically generated using NASA ADS.</p>
+    </body></html>
     """
 
     text_papers = ""
     for cat in sorted(by_category.keys()):
         cat_papers = by_category[cat]
         text_papers += f"\n{'=' * 60}\n{cat} ({len(cat_papers)})\n{'=' * 60}\n"
-        for paper in cat_papers:
-            text_papers += format_paper_text(paper)
+        for paper, hits in cat_papers:
+            text_papers += format_paper_text(paper, hits)
 
-    text = f"""UW-Madison Astro-ph Digest
+    text = f"""UW Astronomy astro-ph Digest
 {date_range}
 
-{len(papers)} paper{"s" if len(papers) != 1 else ""} with UW-Madison affiliated authors
+{len(papers_with_hits)} astro-ph e-print{"s" if len(papers_with_hits) != 1 else ""} with UW Astronomy faculty authors
 {text_papers}
 """
-
     return subject, html, text
 
 
 def send_email(subject: str, html_content: str, text_content: str):
-    """Send the digest email."""
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     sender_email = os.environ["SENDER_EMAIL"]
@@ -381,7 +406,6 @@ def send_email(subject: str, html_content: str, text_content: str):
 
 
 def main():
-    """Main function to run the digest."""
     api_key = os.environ.get("ADS_API_KEY")
     if not api_key:
         raise ValueError("ADS_API_KEY environment variable is required")
@@ -389,22 +413,36 @@ def main():
     days_back = int(os.environ.get("DAYS_BACK", "7"))
     debug = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
 
-    print(f"Querying ADS for UW-Madison astronomy papers from the last {days_back} days...")
-    papers = query_ads(api_key, days_back=days_back, debug=debug)
-    print(f"Found {len(papers)} papers with UW-Madison affiliations")
+    print("Fetching UW Astronomy faculty names...")
+    faculty = get_faculty_names(debug=debug)
+    print(f"Faculty names loaded: {len(faculty)}")
 
-    for paper in papers:
+    print(f"Querying ADS for astro-ph eprints from last {days_back} days...")
+    papers = query_ads_for_faculty(
+        api_key=api_key,
+        faculty_names=faculty,
+        days_back=days_back,
+        debug=debug,
+    )
+
+    # Attach which faculty hit each paper (for display)
+    papers_with_hits = []
+    for p in papers:
+        hits = faculty_hits(p, faculty)
+        papers_with_hits.append((p, hits))
+
+    print(f"Found {len(papers_with_hits)} astro-ph eprints with UW Astronomy faculty authors")
+    for paper, hits in papers_with_hits[:25]:
         title = (paper.get("title") or ["Untitled"])[0]
-        uw_authors = get_uw_authors(paper)
-        print(f"  - {title[:70]}...")
-        print(f"    UW authors: {', '.join(uw_authors)}")
+        print(f"  - {title[:80]}")
+        print(f"    Faculty: {', '.join(hits) if hits else 'Unknown'}")
 
-    subject, html, text = create_email_content(papers, days_back)
+    subject, html, text = create_email_content(papers_with_hits, days_back)
 
     if os.environ.get("SENDER_EMAIL"):
         send_email(subject, html, text)
     else:
-        print("\nEmail credentials not configured. Email content:")
+        print("\nEmail credentials not configured. Email content:\n")
         print(text)
 
 
