@@ -80,12 +80,11 @@ def is_uw_madison_affiliation(affiliation: str) -> bool:
     return False
 
 
-def query_ads(api_key: str, days_back: int = 7, rows: int = 200, debug: bool = False) -> list:
+def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = False) -> list:
     """
     Query ADS for recent astro-ph papers with UW-Madison affiliations.
     
-    Uses a broader query to catch various affiliation formats, then
-    filters results more carefully.
+    Uses multiple search strategies and filters results carefully.
     """
     
     # Calculate date range
@@ -94,13 +93,9 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 200, debug: bool = F
     
     date_range = f"[{start_date.strftime('%Y-%m-%d')} TO {end_date.strftime('%Y-%m-%d')}]"
     
-    # Simpler ADS query using unquoted terms for flexible matching
-    # aff:Wisconsin aff:Madison matches affiliations containing both words anywhere
-    # We filter for astro-ph and confirm UW-Madison in post-processing
-    query = (
-        f'aff:Wisconsin aff:Madison '
-        f'(entdate:{date_range} OR pubdate:{date_range})'
-    )
+    # Simple broad query - just look for Wisconsin in affiliations
+    # We'll filter more precisely in Python
+    query = f'aff:Wisconsin entdate:{date_range}'
     
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -125,10 +120,12 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 200, debug: bool = F
     
     if debug:
         print(f"DEBUG: Raw results from ADS: {len(papers)}")
-        for p in papers[:10]:
+        for p in papers[:15]:
             print(f"  Title: {p.get('title', ['?'])[0][:60]}")
             print(f"  arxiv_class: {p.get('arxiv_class', [])}")
-            print(f"  aff sample: {p.get('aff', ['?'])[:2]}")
+            affs = p.get('aff', [])
+            for i, aff in enumerate(affs[:3]):
+                print(f"  aff[{i}]: {aff[:100] if aff else 'None'}...")
             print()
     
     # Filter to only astronomy/astrophysics papers
