@@ -80,7 +80,7 @@ def is_uw_madison_affiliation(affiliation: str) -> bool:
     return False
 
 
-def query_ads(api_key: str, days_back: int = 7, rows: int = 200) -> list:
+def query_ads(api_key: str, days_back: int = 7, rows: int = 200, debug: bool = False) -> list:
     """
     Query ADS for recent astro-ph papers with UW-Madison affiliations.
     
@@ -94,19 +94,13 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 200) -> list:
     
     date_range = f"[{start_date.strftime('%Y-%m-%d')} TO {end_date.strftime('%Y-%m-%d')}]"
     
-    # ADS query:
-    # - Multiple affiliation matching strategies for UW-Madison
-    # - Use both pubdate and entdate to catch papers that may be indexed with delay
-    # - Filtered to astronomy/astrophysics content
+    # Simpler ADS query - just search for UW-Madison affiliations
+    # We'll filter for astro-ph in post-processing since the arxiv_class query syntax seems unreliable
     query = (
-        f'(aff:"University of Wisconsin" OR aff:"UW-Madison" OR aff:"UW Madison" '
-        f'OR aff:"Wisconsin-Madison" OR institution:"Univ Wisconsin Madison") '
-        f'(entdate:{date_range} OR pubdate:{date_range}) '
-        f'(arxiv_class:"astro-ph" OR arxiv_class:"astro-ph.CO" OR arxiv_class:"astro-ph.EP" OR '
-        f'arxiv_class:"astro-ph.GA" OR arxiv_class:"astro-ph.HE" OR arxiv_class:"astro-ph.IM" OR '
-        f'arxiv_class:"astro-ph.SR" OR '
-        f'bibstem:(ApJ OR ApJL OR ApJS OR AJ OR MNRAS OR A&A OR PASP OR ARA&A OR '
-        f'Icar OR PSJ OR NatAs OR Sci OR Natur))'
+        f'(aff:"University of Wisconsin-Madison" OR aff:"University of Wisconsin, Madison" '
+        f'OR aff:"University of Wisconsin - Madison" OR aff:"UW-Madison" OR aff:"UW Madison" '
+        f'OR institution:"Univ Wisconsin Madison") '
+        f'(entdate:{date_range} OR pubdate:{date_range})'
     )
     
     headers = {
@@ -121,18 +115,51 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 200) -> list:
         "sort": "date desc",
     }
     
+    if debug:
+        print(f"DEBUG: Query = {query}")
+    
     response = requests.get(ADS_API_URL, headers=headers, params=params)
     response.raise_for_status()
     
     data = response.json()
     papers = data.get("response", {}).get("docs", [])
     
+    if debug:
+        print(f"DEBUG: Raw results from ADS: {len(papers)}")
+        for p in papers[:10]:
+            print(f"  Title: {p.get('title', ['?'])[0][:60]}")
+            print(f"  arxiv_class: {p.get('arxiv_class', [])}")
+            print(f"  aff sample: {p.get('aff', ['?'])[:2]}")
+            print()
+    
+    # Filter to only astronomy/astrophysics papers
+    astro_papers = []
+    for paper in papers:
+        arxiv_classes = paper.get("arxiv_class", [])
+        # Check if any arxiv_class starts with "astro-ph"
+        is_astro = any(c.startswith("astro-ph") for c in arxiv_classes) if arxiv_classes else False
+        
+        # Also check bibstem for published papers without arxiv_class
+        bibcode = paper.get("bibcode", "")
+        astro_journals = ["ApJ", "ApJL", "ApJS", "AJ", "MNRAS", "A&A", "PASP", "ARA&A", 
+                         "Icar", "PSJ", "NatAs"]
+        is_astro_journal = any(j in bibcode for j in astro_journals)
+        
+        if is_astro or is_astro_journal:
+            astro_papers.append(paper)
+    
+    if debug:
+        print(f"DEBUG: After astro filter: {len(astro_papers)}")
+    
     # Filter to only papers with confirmed UW-Madison affiliations
     confirmed_papers = []
-    for paper in papers:
+    for paper in astro_papers:
         uw_authors = get_uw_authors(paper)
         if uw_authors:
             confirmed_papers.append(paper)
+    
+    if debug:
+        print(f"DEBUG: After UW-Madison affiliation filter: {len(confirmed_papers)}")
     
     return confirmed_papers
 
@@ -371,9 +398,10 @@ def main():
         raise ValueError("ADS_API_KEY environment variable is required")
     
     days_back = int(os.environ.get("DAYS_BACK", "7"))
+    debug = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
     
     print(f"Querying ADS for UW-Madison astro-ph papers from the last {days_back} days...")
-    papers = query_ads(api_key, days_back=days_back)
+    papers = query_ads(api_key, days_back=days_back, debug=debug)
     print(f"Found {len(papers)} papers with UW-Madison affiliations")
     
     for paper in papers:
