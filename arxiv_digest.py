@@ -97,12 +97,15 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 200) -> list:
     # ADS query:
     # - Affiliation matching for UW-Madison
     # - Filtered to astronomy/astrophysics content via arXiv class or journal
+    # - Explicitly list all astro-ph subcategories (wildcard may not work reliably)
     query = (
         f'(aff:"Wisconsin" aff:"Madison" OR aff:"UW-Madison" OR aff:"UW Madison" '
         f'OR institution:"Univ Wisconsin Madison") '
         f'entdate:{date_range} '
-        f'(arxiv_class:astro-ph.* OR bibstem:(ApJ OR ApJL OR ApJS OR AJ OR MNRAS OR '
-        f'A&A OR PASP OR ARA&A OR Icar OR PSJ OR NatAs OR Sci OR Natur))'
+        f'(arxiv_class:(astro-ph OR astro-ph.CO OR astro-ph.EP OR astro-ph.GA OR '
+        f'astro-ph.HE OR astro-ph.IM OR astro-ph.SR) OR '
+        f'bibstem:(ApJ OR ApJL OR ApJS OR AJ OR MNRAS OR A&A OR PASP OR ARA&A OR '
+        f'Icar OR PSJ OR NatAs OR Sci OR Natur))'
     )
     
     headers = {
