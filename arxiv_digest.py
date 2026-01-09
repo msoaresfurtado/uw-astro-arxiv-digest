@@ -95,15 +95,16 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 200) -> list:
     date_range = f"[{start_date.strftime('%Y-%m-%d')} TO {end_date.strftime('%Y-%m-%d')}]"
     
     # ADS query:
-    # - Affiliation matching for UW-Madison
-    # - Filtered to astronomy/astrophysics content via arXiv class or journal
-    # - Explicitly list all astro-ph subcategories (wildcard may not work reliably)
+    # - Multiple affiliation matching strategies for UW-Madison
+    # - Use both pubdate and entdate to catch papers that may be indexed with delay
+    # - Filtered to astronomy/astrophysics content
     query = (
-        f'(aff:"Wisconsin" aff:"Madison" OR aff:"UW-Madison" OR aff:"UW Madison" '
-        f'OR institution:"Univ Wisconsin Madison") '
-        f'entdate:{date_range} '
-        f'(arxiv_class:(astro-ph OR astro-ph.CO OR astro-ph.EP OR astro-ph.GA OR '
-        f'astro-ph.HE OR astro-ph.IM OR astro-ph.SR) OR '
+        f'(aff:"University of Wisconsin" OR aff:"UW-Madison" OR aff:"UW Madison" '
+        f'OR aff:"Wisconsin-Madison" OR institution:"Univ Wisconsin Madison") '
+        f'(entdate:{date_range} OR pubdate:{date_range}) '
+        f'(arxiv_class:"astro-ph" OR arxiv_class:"astro-ph.CO" OR arxiv_class:"astro-ph.EP" OR '
+        f'arxiv_class:"astro-ph.GA" OR arxiv_class:"astro-ph.HE" OR arxiv_class:"astro-ph.IM" OR '
+        f'arxiv_class:"astro-ph.SR" OR '
         f'bibstem:(ApJ OR ApJL OR ApJS OR AJ OR MNRAS OR A&A OR PASP OR ARA&A OR '
         f'Icar OR PSJ OR NatAs OR Sci OR Natur))'
     )
