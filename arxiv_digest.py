@@ -23,15 +23,21 @@ ADS_API_URL = "https://api.adsabs.harvard.edu/v1/search/query"
 # Patterns for identifying UW-Madison affiliations
 # These cover common variations in how affiliations are listed
 UW_MADISON_PATTERNS = [
-    r"university of wisconsin[\s\-\u2013\u2014]*madison",
-    r"uw[\s\-\u2013\u2014]*madison",
-    r"u\.?\s*of\s*w\.?[\s\-\u2013\u2014]*madison",
-    r"madison.*wisconsin.*(?:astronomy|physics)",
-    r"wisconsin.*madison",
+    r"university of wisconsin[\s,\-\u2013\u2014]*madison",
+    r"uw[\s\-\u2013\u2014]+madison",  # Requires separator to avoid matching "UW" alone
+    r"u\.?\s*of\s*w\.?[\s,\-\u2013\u2014]+madison",
+    r"univ\.?\s*(of\s*)?wisconsin[\s,\-\u2013\u2014]*madison",
 ]
 
 # Compile patterns for efficiency
 UW_MADISON_REGEX = re.compile("|".join(UW_MADISON_PATTERNS), re.IGNORECASE)
+
+# Other UW system campuses to exclude
+OTHER_UW_CAMPUSES = [
+    "milwaukee", "green bay", "la crosse", "eau claire", "oshkosh", 
+    "parkside", "platteville", "river falls", "stevens point", 
+    "stout", "superior", "whitewater"
+]
 
 
 def is_uw_madison_affiliation(affiliation: str) -> bool:
@@ -42,42 +48,34 @@ def is_uw_madison_affiliation(affiliation: str) -> bool:
     - University of Wisconsin-Madison
     - University of Wisconsin - Madison  
     - UW-Madison
-    - UW Madison
     - Univ. of Wisconsin, Madison
-    - Department of Astronomy, Madison, WI
     - etc.
+    
+    Excludes:
+    - Other UW system campuses (Milwaukee, etc.)
+    - University of Washington (also "UW")
+    - Random matches of "Madison" without Wisconsin context
     """
     if not affiliation:
         return False
     
     aff_lower = affiliation.lower()
     
-    # Quick check for obvious non-matches
-    if "wisconsin" not in aff_lower and "uw" not in aff_lower:
+    # Must have "wisconsin" - this excludes University of Washington
+    if "wisconsin" not in aff_lower:
         return False
     
-    # Check against compiled patterns
+    # Exclude other UW system campuses
+    if any(campus in aff_lower for campus in OTHER_UW_CAMPUSES):
+        return False
+    
+    # Check against compiled patterns (these all require Madison explicitly)
     if UW_MADISON_REGEX.search(affiliation):
         return True
     
-    # Additional check: "Wisconsin" + department keywords (but not other UW campuses)
-    if "wisconsin" in aff_lower:
-        # Exclude other UW system campuses
-        other_campuses = ["milwaukee", "green bay", "la crosse", "eau claire", 
-                         "oshkosh", "parkside", "platteville", "river falls",
-                         "stevens point", "stout", "superior", "whitewater"]
-        
-        has_other_campus = any(campus in aff_lower for campus in other_campuses)
-        
-        if not has_other_campus:
-            # Check for astronomy/physics department indicators
-            dept_keywords = ["astronomy", "physics", "astro", "astrophysics"]
-            if any(kw in aff_lower for kw in dept_keywords):
-                return True
-            
-            # Check for Madison specifically
-            if "madison" in aff_lower:
-                return True
+    # Check for Wisconsin + Madison in same affiliation (catches edge cases)
+    if "madison" in aff_lower:
+        return True
     
     return False
 
