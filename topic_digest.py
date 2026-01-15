@@ -306,7 +306,7 @@ def format_paper_html(paper: dict) -> str:
     
     # Truncate abstract
     if len(abstract) > 150:
-        truncated_abstract = abstract[:150].rsplit(' ', 1)[0] + "..."
+        truncated_abstract = abstract[:200].rsplit(' ', 1)[0] + "..."
     else:
         truncated_abstract = abstract
     
