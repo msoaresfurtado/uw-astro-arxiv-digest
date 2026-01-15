@@ -298,14 +298,14 @@ def format_paper_html(paper: dict) -> str:
     score = calculate_relevance_score(paper)
     emoji, color, label, bg_color = get_relevance_tier(score)
     
-    # Format authors - first 3 only
-    if len(authors) > 3:
-        author_str = ", ".join(authors[:3]) + f" + {len(authors) - 3} more"
+    # Format authors - first 6 only
+    if len(authors) > 6:
+        author_str = ", ".join(authors[:6]) + f" + {len(authors) - 6} more"
     else:
         author_str = ", ".join(authors)
     
     # Truncate abstract
-    if len(abstract) > 150:
+    if len(abstract) > 200:
         truncated_abstract = abstract[:200].rsplit(' ', 1)[0] + "..."
     else:
         truncated_abstract = abstract
