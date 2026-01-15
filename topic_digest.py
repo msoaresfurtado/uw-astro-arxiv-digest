@@ -238,26 +238,21 @@ def get_priority_authors(paper: dict) -> list:
 
 
 def calculate_relevance_score(paper: dict) -> int:
-    """
-    Calculate a relevance score for the paper.
-    Higher = more relevant to your interests.
-    """
     score = 0
     
     title = paper.get("title", [""])[0].lower()
     abstract = paper.get("abstract", "").lower()
-    text = title + " " + abstract
     
-    # Priority author: big bonus
+    # Priority author: moderate bonus (not automatic must-read)
     if has_priority_author(paper):
-        score += 50
+        score += 25
     
-    # High-value keyword matches (in title = extra points)
+    # High-value keyword matches
     for kw in HIGH_VALUE_KEYWORDS:
         if kw.lower() in title:
             score += 15
         elif kw.lower() in abstract:
-            score += 8
+            score += 10
     
     # Regular keyword matches
     for kw in TOPIC_KEYWORDS:
@@ -265,25 +260,20 @@ def calculate_relevance_score(paper: dict) -> int:
             if kw.lower() in title:
                 score += 5
             elif kw.lower() in abstract:
-                score += 2
+                score += 3
     
     return score
 
 
 def get_relevance_tier(score: int) -> tuple:
-    """
-    Get relevance tier based on score.
-    Returns (emoji, color, label, bg_color)
-    """
-    if score >= 50:
-        return ("🔴", "#c5050c", "VERY RELEVANT", "#fff0f0")
-    elif score >= 20:
+    if score >= 35:
+        return ("🔴", "#c5050c", "MUST READ", "#fff0f0")
+    elif score >= 15:
         return ("🟠", "#e67e00", "RELEVANT", "#fff8f0")
-    elif score >= 8:
+    elif score >= 5:
         return ("🟡", "#d4a017", "SOMEWHAT RELEVANT", "#fffef0")
     else:
         return ("⚪", "#888888", "GENERAL", "#f9f9f9")
-
 
 def sort_papers(papers: list) -> list:
     """Sort papers by relevance score (highest first)."""
@@ -312,8 +302,8 @@ def format_paper_html(paper: dict) -> str:
         author_str = ", ".join(authors)
     
     # Truncate abstract
-    if len(abstract) > 200:
-        truncated_abstract = abstract[:200].rsplit(' ', 1)[0] + "..."
+    if len(abstract) > 400:
+        truncated_abstract = abstract[:400].rsplit(' ', 1)[0] + "..."
     else:
         truncated_abstract = abstract
     
