@@ -22,6 +22,7 @@ ADS_API_URL = "https://api.adsabs.harvard.edu/v1/search/query"
 # Priority ORCIDs - papers by these authors appear at the top
 PRIORITY_ORCIDS = [
     "0000-0001-7493-7419",  # Melinda Soares-Furtado
+    "0009-0001-1360-8547", #Julia Sheffler
 ]
 
 # Topic keywords to search for (also used for relevance scoring)
@@ -65,7 +66,7 @@ HIGH_VALUE_KEYWORDS = [
 # Silly encouraging welcome messages
 WELCOME_MESSAGES = [
     "🏃‍♀️ Step by step, paper by paper. You're literally ascending while reading about the cosmos. Iconic.",
-    "⭐ The stars aligned for your workout AND your inbox. Let's get this bread (and stay up-to-date on your literature review).",
+    "⭐ Here you are, staying up-to-date on your literature review. Nice work!",
     "🚀 Cardio + astro-ph = an insane form of multitasking. You're a rockstar.",
     "🌟 Fun fact: reading papers on a stepmill burns mass, just like a star. You're basically a main sequence queen.",
     "💪 Other people scroll Instagram at the gym. You read about stellar evolution. We are not the same.",
@@ -92,7 +93,6 @@ WELCOME_MESSAGES = [
 
 # Bottom treasures (rewards for reading to the end)
 BOTTOM_TREASURES = [
-    ("🍺 Wisconsin has more bars than grocery stores. And yet you're at the gym. Reading about stars. At 6am. Are you okay?"),
     ("🗓️ CALENDAR INVITE", "Event: Read arXiv digest on stepmill. When: Tomorrow. And the next day. Recurring: Forever. Attendees: Just you. Location: The void (the gym). RSVP: You already did."),
     ("🪐 COSMIC PERSPECTIVE", "In 5 billion years, the Sun will expand and engulf the Earth. None of these papers will matter. But you read them anyway. That's either beautiful or stupid. Probably both."),
     ("🏁 FINISH LINE", "You crossed it. There's no medal. There's no ceremony. There's just the quiet satisfaction of knowing you read an entire digest while climbing to nowhere."),
@@ -125,7 +125,13 @@ def build_query(days_back: int = 7) -> str:
     # Build keyword clauses
     keyword_clauses = " OR ".join([f'abs:"{kw}"' for kw in TOPIC_KEYWORDS])
     
-    EXCLUDE_CATEGORIES = ["hep-ph", "hep-th", "hep-lat", "gr-qc", "quant-ph"]
+    EXCLUDE_CATEGORIES = [
+        "hep-ph", "hep-th", "hep-lat", "gr-qc", "quant-ph", "cs.SY",
+        "cond-mat.mtrl-sci", "cond-mat.mes-hall", "cond-mat.soft", 
+        "cond-mat.stat-mech", "cond-mat.str-el", "cond-mat.supr-con",
+        "astro-ph.GA", "astro-ph.CO", "astro-ph.HE", "physics.app-ph",
+        "physics.flu-dyn",
+    ]    
     
     exclusions = " ".join([f'-arxiv_class:"{cat}"' for cat in EXCLUDE_CATEGORIES])
     query = (
