@@ -130,7 +130,8 @@ def build_query(days_back: int = 7) -> str:
         "cond-mat.mtrl-sci", "cond-mat.mes-hall", "cond-mat.soft", 
         "cond-mat.stat-mech", "cond-mat.str-el", "cond-mat.supr-con",
         "astro-ph.GA", "astro-ph.CO", "astro-ph.HE", "physics.app-ph",
-        "physics.flu-dyn",
+        "physics.flu-dyn", "physics.ins-det", "physics.plasm-ph", "math.QA",
+        
     ]    
     
     exclusions = " ".join([f'-arxiv_class:"{cat}"' for cat in EXCLUDE_CATEGORIES])
@@ -285,7 +286,7 @@ def sort_papers(papers: list) -> list:
 
 
 def format_paper_html(paper: dict) -> str:
-    """Format a single paper as HTML with full abstract."""
+    """Format a single paper as HTML with collapsible abstract."""
     
     title = paper.get("title", ["Untitled"])[0]
     authors = paper.get("author", [])
@@ -297,9 +298,9 @@ def format_paper_html(paper: dict) -> str:
     score = calculate_relevance_score(paper)
     emoji, color, label, bg_color = get_relevance_tier(score)
     
-    # Format authors
-    if len(authors) > 15:
-        author_str = ", ".join(authors[:15]) + f" et al. ({len(authors)} authors)"
+    # Format authors - first 3 only
+    if len(authors) > 3:
+        author_str = ", ".join(authors[:3]) + f" + {len(authors) - 3} more"
     else:
         author_str = ", ".join(authors)
     
@@ -319,23 +320,23 @@ def format_paper_html(paper: dict) -> str:
             <span style="background-color: {color}; color: white; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">
                 {label}
             </span>
+            <span style="color: #888; font-size: 12px; margin-left: 10px;">{category}</span>
         </div>
-        <h3 style="margin: 0 0 10px 0;">
+        <h3 style="margin: 0 0 8px 0;">
             <a href="{url}" style="color: #0479a8; text-decoration: none;">{title}</a>
         </h3>
         {priority_badge}
-        <p style="margin: 0 0 8px 0; color: #666; font-size: 14px;">
-            <strong>Authors:</strong> {author_str}
+        <p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">
+            {author_str}
         </p>
-        <p style="margin: 0 0 12px 0; color: #666; font-size: 14px;">
-            <strong>Category:</strong> {category}
-        </p>
-        <p style="margin: 0; font-size: 14px; line-height: 1.6; text-align: justify;">
-            {abstract}
-        </p>
+        <details style="cursor: pointer;">
+            <summary style="color: #0479a8; font-size: 13px;">Show abstract</summary>
+            <p style="margin: 10px 0 0 0; font-size: 14px; line-height: 1.6; text-align: justify; color: #333;">
+                {abstract}
+            </p>
+        </details>
     </div>
     """
-
 
 def format_paper_text(paper: dict) -> str:
     """Format a single paper as plain text with full abstract."""
