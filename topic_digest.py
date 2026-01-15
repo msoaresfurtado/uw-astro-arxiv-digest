@@ -266,11 +266,11 @@ def calculate_relevance_score(paper: dict) -> int:
 
 
 def get_relevance_tier(score: int) -> tuple:
-    if score >= 35:
+    if score >= 20:
         return ("🔴", "#c5050c", "MUST READ", "#fff0f0")
-    elif score >= 15:
+    elif score >= 10:
         return ("🟠", "#e67e00", "RELEVANT", "#fff8f0")
-    elif score >= 5:
+    elif score >= 2:
         return ("🟡", "#d4a017", "SOMEWHAT RELEVANT", "#fffef0")
     else:
         return ("⚪", "#888888", "GENERAL", "#f9f9f9")
