@@ -54,6 +54,9 @@ TOPIC_KEYWORDS = [
     "chemical abundance",
     "convective zone",
     "convective envelope",
+    "transiting planet",
+    "transiting exoplanet",
+    "high-precision radial velocity",
 ]
 
 # High-value keywords (extra relevance points)
