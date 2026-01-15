@@ -286,7 +286,7 @@ def sort_papers(papers: list) -> list:
 
 
 def format_paper_html(paper: dict) -> str:
-    """Format a single paper as HTML with collapsible abstract."""
+    """Format a single paper as HTML with truncated abstract."""
     
     title = paper.get("title", ["Untitled"])[0]
     authors = paper.get("author", [])
@@ -303,6 +303,12 @@ def format_paper_html(paper: dict) -> str:
         author_str = ", ".join(authors[:3]) + f" + {len(authors) - 3} more"
     else:
         author_str = ", ".join(authors)
+    
+    # Truncate abstract
+    if len(abstract) > 150:
+        truncated_abstract = abstract[:150].rsplit(' ', 1)[0] + "..."
+    else:
+        truncated_abstract = abstract
     
     # Priority author badge
     priority_badge = ""
@@ -329,15 +335,11 @@ def format_paper_html(paper: dict) -> str:
         <p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">
             {author_str}
         </p>
-        <details style="cursor: pointer;">
-            <summary style="color: #0479a8; font-size: 13px;">Show abstract</summary>
-            <p style="margin: 10px 0 0 0; font-size: 14px; line-height: 1.6; text-align: justify; color: #333;">
-                {abstract}
-            </p>
-        </details>
+        <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #444;">
+            {truncated_abstract} <a href="{url}" style="color: #0479a8; text-decoration: none;">[read more]</a>
+        </p>
     </div>
     """
-
 def format_paper_text(paper: dict) -> str:
     """Format a single paper as plain text with full abstract."""
     
