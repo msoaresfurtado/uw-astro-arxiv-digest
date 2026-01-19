@@ -35,7 +35,11 @@ TOPIC_KEYWORDS = [
     "planet engulfment",
     "engulfment",
     "young stars",
+    "Orion Nebula Cluster",
+    "Rosette Nebula",
+    "Ursa Major moving group",
     "TESS photometry",
+    "Upper Sco",
     "stellar age",
     "rotational evolution",
     "starspot",
@@ -136,12 +140,13 @@ def build_query(days_back: int = 7) -> str:
     keyword_clauses = " OR ".join([f'abs:"{kw}"' for kw in TOPIC_KEYWORDS])
     
     EXCLUDE_CATEGORIES = [
+        "math.AP", "math.NT", "math.CO",
+        "physics.optics", "physics.space-ph", "astro-ph.IM",
         "hep-ph", "hep-th", "hep-lat", "gr-qc", "quant-ph", "cs.SY",
         "cond-mat.mtrl-sci", "cond-mat.mes-hall", "cond-mat.soft", 
         "cond-mat.stat-mech", "cond-mat.str-el", "cond-mat.supr-con",
         "astro-ph.GA", "astro-ph.CO", "astro-ph.HE", "physics.app-ph",
-        "physics.flu-dyn", "physics.ins-det", "physics.plasm-ph", "math.QA",
-        
+        "physics.flu-dyn", "physics.ins-det", "physics.plasm-ph", "math.QA",  
     ]    
     
     exclusions = " ".join([f'-arxiv_class:"{cat}"' for cat in EXCLUDE_CATEGORIES])
