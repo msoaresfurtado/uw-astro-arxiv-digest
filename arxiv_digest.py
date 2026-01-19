@@ -2,8 +2,11 @@
 """
 UW-Madison Astro-ph arXiv Digest (ADS Version)
 
-Queries NASA ADS for astronomy papers from the past week with
-UW-Madison affiliated authors.
+Queries NASA ADS for astronomy papers with UW-Madison affiliated authors.
+
+Note: ADS affiliation indexing lags arXiv submissions by 1-3 days.
+This is unavoidable without maintaining a manual author list.
+The script filters out old papers that get re-indexed when published.
 """
 
 import requests
@@ -17,74 +20,22 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 
-# ADS API configuration
 ADS_API_URL = "https://api.adsabs.harvard.edu/v1/search/query"
 
 
-def test_paper_lookup(api_key: str, bibcode: str = "2026arXiv260100949L"):
-    """Debug function to look up a specific paper and see its ADS record."""
-    
-    query = f'bibcode:{bibcode}'
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    
-    params = {
-        "q": query,
-        "fl": "title,author,aff,abstract,bibcode,identifier,keyword,pubdate,arxiv_class,entdate",
-        "rows": 1,
-    }
-    
-    print(f"Looking up paper: {bibcode}")
-    response = requests.get(ADS_API_URL, headers=headers, params=params)
-    response.raise_for_status()
-    
-    data = response.json()
-    papers = data.get("response", {}).get("docs", [])
-    
-    if not papers:
-        print("Paper not found in ADS!")
-        return
-    
-    paper = papers[0]
-    print(f"\nTitle: {paper.get('title', ['?'])[0]}")
-    print(f"Bibcode: {paper.get('bibcode')}")
-    print(f"Pubdate: {paper.get('pubdate')}")
-    print(f"Entdate: {paper.get('entdate')}")
-    print(f"arXiv class: {paper.get('arxiv_class', [])}")
-    print(f"\nAuthors and affiliations:")
-    authors = paper.get("author", [])
-    affs = paper.get("aff", [])
-    for i, author in enumerate(authors):
-        aff = affs[i] if i < len(affs) else "N/A"
-        print(f"  {author}")
-        print(f"    -> {aff}")
-    
-    print(f"\nWould match UW-Madison filter?")
-    for i, author in enumerate(authors):
-        if i < len(affs):
-            aff = affs[i]
-            matches = is_uw_madison_affiliation(aff)
-            if "wisconsin" in aff.lower() or "madison" in aff.lower():
-                print(f"  {author}: {matches} (aff contains wisconsin/madison)")
-                print(f"    -> {aff[:100]}")
+# =============================================================================
+# UW-MADISON AFFILIATION MATCHING
+# =============================================================================
 
-
-# Patterns for identifying UW-Madison affiliations
-# These cover common variations in how affiliations are listed
 UW_MADISON_PATTERNS = [
     r"university of wisconsin[\s,\-\u2013\u2014]*madison",
-    r"uw[\s\-\u2013\u2014]+madison",  # Requires separator to avoid matching "UW" alone
+    r"uw[\s\-\u2013\u2014]+madison",
     r"u\.?\s*of\s*w\.?[\s,\-\u2013\u2014]+madison",
     r"univ\.?\s*(of\s*)?wisconsin[\s,\-\u2013\u2014]*madison",
 ]
 
-# Compile patterns for efficiency
 UW_MADISON_REGEX = re.compile("|".join(UW_MADISON_PATTERNS), re.IGNORECASE)
 
-# Other UW system campuses to exclude
 OTHER_UW_CAMPUSES = [
     "milwaukee", "green bay", "la crosse", "eau claire", "oshkosh", 
     "parkside", "platteville", "river falls", "stevens point", 
@@ -93,46 +44,32 @@ OTHER_UW_CAMPUSES = [
 
 
 def is_uw_madison_affiliation(affiliation: str) -> bool:
-    """
-    Check if an affiliation string indicates UW-Madison.
-    
-    Handles various formats:
-    - University of Wisconsin-Madison
-    - University of Wisconsin - Madison  
-    - UW-Madison
-    - Univ. of Wisconsin, Madison
-    - etc.
-    
-    Excludes:
-    - Other UW system campuses (Milwaukee, etc.)
-    - University of Washington (also "UW")
-    - Random matches of "Madison" without Wisconsin context
-    """
+    """Check if an affiliation string indicates UW-Madison."""
     if not affiliation:
         return False
     
     aff_lower = affiliation.lower()
     
-    # Must have "wisconsin" - this excludes University of Washington
     if "wisconsin" not in aff_lower:
         return False
     
-    # Exclude other UW system campuses
     if any(campus in aff_lower for campus in OTHER_UW_CAMPUSES):
         return False
     
-    # Check against compiled patterns (these all require Madison explicitly)
     if UW_MADISON_REGEX.search(affiliation):
         return True
     
-    # Check for Wisconsin + Madison in same affiliation (catches edge cases)
     if "madison" in aff_lower:
         return True
     
     return False
 
 
-def get_arxiv_id(paper: dict) -> str:
+# =============================================================================
+# ARXIV DATE EXTRACTION (to filter old re-indexed papers)
+# =============================================================================
+
+def get_arxiv_id(paper: dict) -> str | None:
     """Extract arXiv ID from ADS paper record."""
     identifiers = paper.get("identifier", [])
     for ident in identifiers:
@@ -156,20 +93,20 @@ def get_arxiv_submission_month(paper: dict) -> tuple[int, int] | None:
     return None
 
 
-def is_recent_arxiv_paper(paper: dict, max_months_old: int = 2) -> bool:
+def is_recent_submission(paper: dict, max_months_old: int = 2) -> bool:
     """
-    Check if a paper's arXiv submission is recent enough to include.
+    Check if paper's arXiv submission is recent.
     
     Returns True if:
-    - Paper has no arXiv ID (e.g., journal-only paper, keep it)
-    - Paper's arXiv ID indicates submission within max_months_old
+    - Paper has no arXiv ID (journal-only, keep it)
+    - Paper was submitted to arXiv within max_months_old
     
-    Returns False if:
-    - Paper's arXiv ID indicates it's older than max_months_old
+    Returns False if paper is an old arXiv submission that was
+    just re-indexed (e.g., when journal version published).
     """
     sub = get_arxiv_submission_month(paper)
     if sub is None:
-        return True  # Keep non-arXiv papers
+        return True
     
     year, month = sub
     now = datetime.now()
@@ -177,21 +114,20 @@ def is_recent_arxiv_paper(paper: dict, max_months_old: int = 2) -> bool:
     return months_ago <= max_months_old
 
 
-def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = False) -> list:
+# =============================================================================
+# ADS QUERY
+# =============================================================================
+
+def query_ads(api_key: str, days_back: int = 7, debug: bool = False) -> list:
     """
     Query ADS for recent astro-ph papers with UW-Madison affiliations.
-    
-    Uses multiple search strategies and filters results carefully.
     """
     
-    # Calculate date range
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days_back)
-    
     date_range = f"[{start_date.strftime('%Y-%m-%d')} TO {end_date.strftime('%Y-%m-%d')}]"
     
-    # Simple broad query - just look for Wisconsin in affiliations
-    # We'll filter more precisely in Python
+    # Query for Wisconsin affiliations indexed in the date range
     query = f'aff:Wisconsin entdate:{date_range}'
     
     headers = {
@@ -202,7 +138,7 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = F
     params = {
         "q": query,
         "fl": "title,author,aff,abstract,bibcode,identifier,keyword,pubdate,arxiv_class",
-        "rows": rows,
+        "rows": 500,
         "sort": "date desc",
     }
     
@@ -217,29 +153,16 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = F
     
     if debug:
         print(f"DEBUG: Raw results from ADS: {len(papers)}")
-        for p in papers[:15]:
-            print(f"  Title: {p.get('title', ['?'])[0][:60]}")
-            print(f"  arxiv_class: {p.get('arxiv_class', [])}")
-            arxiv_id = get_arxiv_id(p)
-            print(f"  arXiv ID: {arxiv_id}")
-            sub = get_arxiv_submission_month(p)
-            print(f"  arXiv submission: {sub}")
-            affs = p.get('aff', [])
-            for i, aff in enumerate(affs[:3]):
-                print(f"  aff[{i}]: {aff[:100] if aff else 'None'}...")
-            print()
     
-    # Filter to only astronomy/astrophysics papers
+    # Filter 1: Astronomy papers only
     astro_papers = []
     for paper in papers:
         arxiv_classes = paper.get("arxiv_class", [])
-        # Check if any arxiv_class starts with "astro-ph"
         is_astro = any(c.startswith("astro-ph") for c in arxiv_classes) if arxiv_classes else False
         
-        # Also check bibstem for published papers without arxiv_class
         bibcode = paper.get("bibcode", "")
-        astro_journals = ["ApJ", "ApJL", "ApJS", "AJ", "MNRAS", "A&A", "PASP", "ARA&A", 
-                         "Icar", "PSJ", "NatAs"]
+        astro_journals = ["ApJ", "ApJL", "ApJS", "AJ", "MNRAS", "A&A", "PASP", 
+                         "ARA&A", "Icar", "PSJ", "NatAs", "arXiv"]
         is_astro_journal = any(j in bibcode for j in astro_journals)
         
         if is_astro or is_astro_journal:
@@ -248,7 +171,7 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = F
     if debug:
         print(f"DEBUG: After astro filter: {len(astro_papers)}")
     
-    # Filter to only papers with confirmed UW-Madison affiliations
+    # Filter 2: Confirmed UW-Madison affiliation (not other UW campuses)
     confirmed_papers = []
     for paper in astro_papers:
         uw_authors = get_uw_authors(paper)
@@ -256,50 +179,30 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = F
             confirmed_papers.append(paper)
     
     if debug:
-        print(f"DEBUG: After UW-Madison affiliation filter: {len(confirmed_papers)}")
+        print(f"DEBUG: After UW-Madison filter: {len(confirmed_papers)}")
     
-    # Filter out old arXiv papers that were just recently indexed/published
-    # This prevents papers from months ago showing up when their journal
-    # version is published or metadata is updated
+    # Filter 3: Recent arXiv submissions only (exclude old re-indexed papers)
     recent_papers = []
     for paper in confirmed_papers:
-        if is_recent_arxiv_paper(paper, max_months_old=2):
+        if is_recent_submission(paper, max_months_old=2):
             recent_papers.append(paper)
         elif debug:
             title = paper.get("title", ["?"])[0][:50]
             sub = get_arxiv_submission_month(paper)
-            print(f"DEBUG: Filtered out old paper: {title}... (arXiv: {sub})")
+            print(f"DEBUG: Filtered old paper: {title}... (arXiv: {sub})")
     
     if debug:
-        print(f"DEBUG: After arXiv recency filter: {len(recent_papers)}")
+        print(f"DEBUG: After recency filter: {len(recent_papers)}")
     
     return recent_papers
 
 
-def get_arxiv_url(paper: dict) -> str:
-    """Get arXiv URL for a paper."""
-    arxiv_id = get_arxiv_id(paper)
-    if arxiv_id:
-        return f"https://arxiv.org/abs/{arxiv_id}"
-    # Fallback to ADS URL
-    bibcode = paper.get("bibcode", "")
-    return f"https://ui.adsabs.harvard.edu/abs/{bibcode}"
-
-
-def get_arxiv_category(paper: dict) -> str:
-    """Get primary arXiv category."""
-    classes = paper.get("arxiv_class", [])
-    if classes:
-        return classes[0]
-    return "astro-ph"
-
+# =============================================================================
+# PAPER FORMATTING
+# =============================================================================
 
 def get_uw_authors(paper: dict) -> list:
-    """
-    Extract UW-Madison affiliated authors from a paper.
-    
-    Uses flexible matching to handle various affiliation formats.
-    """
+    """Extract UW-Madison affiliated authors from a paper."""
     authors = paper.get("author", [])
     affiliations = paper.get("aff", [])
     
@@ -313,6 +216,21 @@ def get_uw_authors(paper: dict) -> list:
     return uw_authors
 
 
+def get_arxiv_url(paper: dict) -> str:
+    """Get arXiv or ADS URL for a paper."""
+    arxiv_id = get_arxiv_id(paper)
+    if arxiv_id:
+        return f"https://arxiv.org/abs/{arxiv_id}"
+    bibcode = paper.get("bibcode", "")
+    return f"https://ui.adsabs.harvard.edu/abs/{bibcode}"
+
+
+def get_arxiv_category(paper: dict) -> str:
+    """Get primary arXiv category."""
+    classes = paper.get("arxiv_class", [])
+    return classes[0] if classes else "astro-ph"
+
+
 def format_paper_html(paper: dict) -> str:
     """Format a single paper as HTML."""
     
@@ -323,16 +241,13 @@ def format_paper_html(paper: dict) -> str:
     category = get_arxiv_category(paper)
     uw_authors = get_uw_authors(paper)
     
-    # Format authors
     if len(authors) > 10:
         author_str = ", ".join(authors[:10]) + f" et al. ({len(authors)} authors)"
     else:
         author_str = ", ".join(authors)
     
-    # Format UW authors
     uw_str = ", ".join(uw_authors) if uw_authors else "Unknown"
     
-    # Truncate abstract
     if len(abstract) > 500:
         abstract = abstract[:500] + "..."
     
@@ -367,16 +282,13 @@ def format_paper_text(paper: dict) -> str:
     category = get_arxiv_category(paper)
     uw_authors = get_uw_authors(paper)
     
-    # Format authors
     if len(authors) > 10:
         author_str = ", ".join(authors[:10]) + f" et al. ({len(authors)} authors)"
     else:
         author_str = ", ".join(authors)
     
-    # Format UW authors
     uw_str = ", ".join(uw_authors) if uw_authors else "Unknown"
     
-    # Truncate abstract
     if len(abstract) > 500:
         abstract = abstract[:500] + "..."
     
@@ -393,6 +305,10 @@ Link: {url}
 """
 
 
+# =============================================================================
+# EMAIL
+# =============================================================================
+
 def create_email_content(papers: list, days_back: int) -> tuple:
     """Create HTML and plain text email content."""
     
@@ -401,7 +317,7 @@ def create_email_content(papers: list, days_back: int) -> tuple:
     date_range = f"{start_date.strftime('%B %d')} to {end_date.strftime('%B %d, %Y')}"
     
     if not papers:
-        subject = f"UW-Madison Astro-ph Digest: No papers this week"
+        subject = "UW-Madison Astro-ph Digest: No papers this week"
         html = f"""
         <html>
         <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
@@ -418,13 +334,11 @@ def create_email_content(papers: list, days_back: int) -> tuple:
     
     subject = f"UW-Madison Astro-ph Digest: {len(papers)} paper{'s' if len(papers) != 1 else ''} this week"
     
-    # Group papers by category
     by_category = defaultdict(list)
     for paper in papers:
         category = get_arxiv_category(paper)
         by_category[category].append(paper)
     
-    # Build HTML content
     html_papers = ""
     for cat in sorted(by_category.keys()):
         cat_papers = by_category[cat]
@@ -444,12 +358,12 @@ def create_email_content(papers: list, days_back: int) -> tuple:
         <hr style="margin-top: 40px; border: none; border-top: 1px solid #ddd;">
         <p style="color: #999; font-size: 12px;">
             This digest is automatically generated using NASA ADS.
+            New papers may take 1-3 days to appear due to ADS indexing.
         </p>
     </body>
     </html>
     """
     
-    # Build plain text content
     text_papers = ""
     for cat in sorted(by_category.keys()):
         cat_papers = by_category[cat]
@@ -462,6 +376,8 @@ def create_email_content(papers: list, days_back: int) -> tuple:
 
 {len(papers)} paper{"s" if len(papers) != 1 else ""} with UW-Madison affiliated authors
 {text_papers}
+---
+Note: New papers may take 1-3 days to appear due to ADS indexing.
 """
     
     return subject, html, text
@@ -493,6 +409,57 @@ def send_email(subject: str, html_content: str, text_content: str):
     print(f"Email sent successfully to {recipient_email}")
 
 
+# =============================================================================
+# DEBUG / TEST
+# =============================================================================
+
+def test_paper_lookup(api_key: str, bibcode: str):
+    """Debug function to look up a specific paper."""
+    
+    query = f'bibcode:{bibcode}'
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    
+    params = {
+        "q": query,
+        "fl": "title,author,aff,abstract,bibcode,identifier,keyword,pubdate,arxiv_class,entdate",
+        "rows": 1,
+    }
+    
+    print(f"Looking up paper: {bibcode}")
+    response = requests.get(ADS_API_URL, headers=headers, params=params)
+    response.raise_for_status()
+    
+    data = response.json()
+    papers = data.get("response", {}).get("docs", [])
+    
+    if not papers:
+        print("Paper not found in ADS!")
+        return
+    
+    paper = papers[0]
+    print(f"\nTitle: {paper.get('title', ['?'])[0]}")
+    print(f"Bibcode: {paper.get('bibcode')}")
+    print(f"Pubdate: {paper.get('pubdate')}")
+    print(f"Entdate: {paper.get('entdate')}")
+    print(f"arXiv ID: {get_arxiv_id(paper)}")
+    print(f"arXiv submission: {get_arxiv_submission_month(paper)}")
+    print(f"Would pass recency filter: {is_recent_submission(paper)}")
+    print(f"arXiv class: {paper.get('arxiv_class', [])}")
+    print(f"\nAuthors and affiliations:")
+    authors = paper.get("author", [])
+    affs = paper.get("aff", [])
+    for i, author in enumerate(authors):
+        aff = affs[i] if i < len(affs) else "N/A"
+        is_uw = is_uw_madison_affiliation(aff)
+        marker = " [UW-MADISON]" if is_uw else ""
+        print(f"  {author}{marker}")
+        print(f"    -> {aff[:100]}{'...' if len(aff) > 100 else ''}")
+
+
 def main():
     """Main function to run the digest."""
     
@@ -500,7 +467,6 @@ def main():
     if not api_key:
         raise ValueError("ADS_API_KEY environment variable is required")
     
-    # Test mode - look up a specific paper
     test_bibcode = os.environ.get("TEST_BIBCODE")
     if test_bibcode:
         test_paper_lookup(api_key, test_bibcode)
@@ -510,6 +476,7 @@ def main():
     debug = os.environ.get("DEBUG", "").lower() in ("1", "true", "yes")
     
     print(f"Querying ADS for UW-Madison astro-ph papers from the last {days_back} days...")
+    
     papers = query_ads(api_key, days_back=days_back, debug=debug)
     print(f"Found {len(papers)} papers with UW-Madison affiliations")
     
@@ -526,7 +493,7 @@ def main():
     if os.environ.get("SENDER_EMAIL"):
         send_email(subject, html, text)
     else:
-        print("\nEmail credentials not configured. Email content:")
+        print("\nEmail credentials not configured. Preview:")
         print(text)
 
 
