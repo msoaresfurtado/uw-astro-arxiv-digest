@@ -204,10 +204,15 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = F
         uw_authors = get_uw_authors(paper)
         if uw_authors:
             confirmed_papers.append(paper)
-    
     if debug:
         print(f"DEBUG: After UW-Madison affiliation filter: {len(confirmed_papers)}")
-    
+    # After your existing filters, add:
+    recent_papers = []
+    cutoff = datetime.now() - timedelta(days=days_back + 31)  # buffer for monthly granularity
+    for paper in confirmed_papers:
+        sub_date = get_arxiv_submission_date(paper)
+        if sub_date is None or sub_date >= cutoff:
+            recent_papers.append(paper)
     return confirmed_papers
 
 
@@ -229,6 +234,18 @@ def get_arxiv_url(paper: dict) -> str:
     bibcode = paper.get("bibcode", "")
     return f"https://ui.adsabs.harvard.edu/abs/{bibcode}"
 
+def get_arxiv_submission_date(paper: dict) -> datetime | None:
+    """Extract submission date from arXiv ID."""
+    arxiv_id = get_arxiv_id(paper)
+    if not arxiv_id:
+        return None
+    # Format: YYMM.NNNNN or old format: category/YYMMNNN
+    match = re.match(r'(\d{2})(\d{2})\.', arxiv_id)
+    if match:
+        year = 2000 + int(match.group(1))
+        month = int(match.group(2))
+        return datetime(year, month, 1)
+    return None
 
 def get_arxiv_category(paper: dict) -> str:
     """Get primary arXiv category."""
