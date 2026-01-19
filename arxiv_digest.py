@@ -71,6 +71,7 @@ def test_paper_lookup(api_key: str, bibcode: str = "2026arXiv260100949L"):
                 print(f"  {author}: {matches} (aff contains wisconsin/madison)")
                 print(f"    -> {aff[:100]}")
 
+
 # Patterns for identifying UW-Madison affiliations
 # These cover common variations in how affiliations are listed
 UW_MADISON_PATTERNS = [
@@ -131,6 +132,51 @@ def is_uw_madison_affiliation(affiliation: str) -> bool:
     return False
 
 
+def get_arxiv_id(paper: dict) -> str:
+    """Extract arXiv ID from ADS paper record."""
+    identifiers = paper.get("identifier", [])
+    for ident in identifiers:
+        if ident.startswith("arXiv:"):
+            return ident.replace("arXiv:", "")
+    return None
+
+
+def get_arxiv_submission_month(paper: dict) -> tuple[int, int] | None:
+    """
+    Return (year, month) from arXiv ID, or None if not an arXiv paper.
+    
+    arXiv IDs use format YYMM.NNNNN (e.g., 2410.08313 = October 2024)
+    """
+    arxiv_id = get_arxiv_id(paper)
+    if not arxiv_id:
+        return None
+    match = re.match(r'(\d{2})(\d{2})\.', arxiv_id)
+    if match:
+        return (2000 + int(match.group(1)), int(match.group(2)))
+    return None
+
+
+def is_recent_arxiv_paper(paper: dict, max_months_old: int = 2) -> bool:
+    """
+    Check if a paper's arXiv submission is recent enough to include.
+    
+    Returns True if:
+    - Paper has no arXiv ID (e.g., journal-only paper, keep it)
+    - Paper's arXiv ID indicates submission within max_months_old
+    
+    Returns False if:
+    - Paper's arXiv ID indicates it's older than max_months_old
+    """
+    sub = get_arxiv_submission_month(paper)
+    if sub is None:
+        return True  # Keep non-arXiv papers
+    
+    year, month = sub
+    now = datetime.now()
+    months_ago = (now.year - year) * 12 + (now.month - month)
+    return months_ago <= max_months_old
+
+
 def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = False) -> list:
     """
     Query ADS for recent astro-ph papers with UW-Madison affiliations.
@@ -174,6 +220,10 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = F
         for p in papers[:15]:
             print(f"  Title: {p.get('title', ['?'])[0][:60]}")
             print(f"  arxiv_class: {p.get('arxiv_class', [])}")
+            arxiv_id = get_arxiv_id(p)
+            print(f"  arXiv ID: {arxiv_id}")
+            sub = get_arxiv_submission_month(p)
+            print(f"  arXiv submission: {sub}")
             affs = p.get('aff', [])
             for i, aff in enumerate(affs[:3]):
                 print(f"  aff[{i}]: {aff[:100] if aff else 'None'}...")
@@ -204,25 +254,26 @@ def query_ads(api_key: str, days_back: int = 7, rows: int = 500, debug: bool = F
         uw_authors = get_uw_authors(paper)
         if uw_authors:
             confirmed_papers.append(paper)
+    
     if debug:
         print(f"DEBUG: After UW-Madison affiliation filter: {len(confirmed_papers)}")
-    # After your existing filters, add:
+    
+    # Filter out old arXiv papers that were just recently indexed/published
+    # This prevents papers from months ago showing up when their journal
+    # version is published or metadata is updated
     recent_papers = []
-    cutoff = datetime.now() - timedelta(days=days_back + 31)  # buffer for monthly granularity
     for paper in confirmed_papers:
-        sub_date = get_arxiv_submission_date(paper)
-        if sub_date is None or sub_date >= cutoff:
+        if is_recent_arxiv_paper(paper, max_months_old=2):
             recent_papers.append(paper)
-    return confirmed_papers
-
-
-def get_arxiv_id(paper: dict) -> str:
-    """Extract arXiv ID from ADS paper record."""
-    identifiers = paper.get("identifier", [])
-    for ident in identifiers:
-        if ident.startswith("arXiv:"):
-            return ident.replace("arXiv:", "")
-    return None
+        elif debug:
+            title = paper.get("title", ["?"])[0][:50]
+            sub = get_arxiv_submission_month(paper)
+            print(f"DEBUG: Filtered out old paper: {title}... (arXiv: {sub})")
+    
+    if debug:
+        print(f"DEBUG: After arXiv recency filter: {len(recent_papers)}")
+    
+    return recent_papers
 
 
 def get_arxiv_url(paper: dict) -> str:
@@ -234,18 +285,6 @@ def get_arxiv_url(paper: dict) -> str:
     bibcode = paper.get("bibcode", "")
     return f"https://ui.adsabs.harvard.edu/abs/{bibcode}"
 
-def get_arxiv_submission_date(paper: dict) -> datetime | None:
-    """Extract submission date from arXiv ID."""
-    arxiv_id = get_arxiv_id(paper)
-    if not arxiv_id:
-        return None
-    # Format: YYMM.NNNNN or old format: category/YYMMNNN
-    match = re.match(r'(\d{2})(\d{2})\.', arxiv_id)
-    if match:
-        year = 2000 + int(match.group(1))
-        month = int(match.group(2))
-        return datetime(year, month, 1)
-    return None
 
 def get_arxiv_category(paper: dict) -> str:
     """Get primary arXiv category."""
@@ -477,7 +516,9 @@ def main():
     for paper in papers:
         title = paper.get("title", ["Untitled"])[0]
         uw_authors = get_uw_authors(paper)
-        print(f"  - {title[:70]}...")
+        arxiv_sub = get_arxiv_submission_month(paper)
+        sub_str = f" (arXiv: {arxiv_sub[0]}-{arxiv_sub[1]:02d})" if arxiv_sub else ""
+        print(f"  - {title[:70]}...{sub_str}")
         print(f"    UW authors: {', '.join(uw_authors)}")
     
     subject, html, text = create_email_content(papers, days_back)
