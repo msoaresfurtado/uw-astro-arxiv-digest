@@ -124,7 +124,6 @@ BOTTOM_TREASURES = [
     ("🧪 EXPERIMENT RESULTS", "Hypothesis: You would read this whole email. Method: Sent email. Results: You're reading this. Conclusion: Hypothesis confirmed. P-value: very significant."),
     ("🌈 WHOLESOME MOMENT", "Hey. Genuinely. It's hard to keep up with the literature while doing everything else. The fact that you're trying means a lot. You're doing great. 💜"),
     ("🎰 SLOT MACHINE", "🍒🍒🍒 JACKPOT! You won: the knowledge from all these abstracts, leg strength, and this nice message. Cash out anytime (close email)."),
-    ("📧 META MOMENT: You're reading a silly message at the bottom of an automated email you built yourself. You engineered your own dopamine hit. That's either genius or a cry for help. Probably both."),
     ("🛸 ALIEN MESSAGE", "GREETINGS HUMAN. WE HAVE OBSERVED YOUR DEDICATION TO BOTH PHYSICAL AND INTELLECTUAL PURSUITS. YOU WILL BE SPARED DURING THE INVASION. jk great job reading!"),
 ]
 
